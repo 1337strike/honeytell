@@ -1,0 +1,195 @@
+# honeytell configuration.
+#
+# One run is fully described by this file plus a seed. The sha256 of this file
+# goes into every report, so a result can always be traced back to the exact
+# settings that produced it.
+
+# ---------------------------------------------------------------------------
+# Backends. Local models only; nothing here reaches a paid API.
+#
+# Serve them with Ollama and point the honeypots at the OpenAI-compatible
+# route. Two arms are the default: same family at two sizes isolates model
+# size, and a third arm at one size isolates model family.
+# ---------------------------------------------------------------------------
+
+[[backends]]
+name = "qwen3b"
+model = "qwen2.5:3b-instruct-q4_K_M"
+base_url = "http://127.0.0.1:11434/v1"
+family = "qwen2.5"
+params_b = 3.0
+quantisation = "q4_K_M"
+# Must equal OLLAMA_CONTEXT_LENGTH on the host. The server does not report
+# this back, so it is declared here to get it into provenance. See the README
+# for why the default of 4096 is too small for a honeytell session.
+context_length = 8192
+
+[[backends]]
+name = "qwen7b"
+model = "qwen2.5:7b-instruct-q4_K_M"
+base_url = "http://127.0.0.1:11434/v1"
+family = "qwen2.5"
+params_b = 7.0
+quantisation = "q4_K_M"
+context_length = 8192
+
+# Optional third arm for a family contrast at a similar size.
+# [[backends]]
+# name = "llama8b"
+# model = "llama3.1:8b-instruct-q4_K_M"
+# base_url = "http://127.0.0.1:11434/v1"
+# family = "llama3.1"
+# params_b = 8.0
+# quantisation = "q4_K_M"
+
+# ---------------------------------------------------------------------------
+# Targets. Every one of these must be deployed by you, on an isolated
+# network. Fill in the port each honeypot listens on after you bring it up,
+# and pin the commit you deployed so the report records it.
+# ---------------------------------------------------------------------------
+
+# The real system control. Kept in a container like every other target, so
+# container artifacts are held constant and cannot explain a detection.
+[[targets]]
+name = "real"
+kind = "real"
+host = "127.0.0.1"
+port = 2200
+username = "analyst"
+password = "analyst"
+image = "honeytell/real-sshd:0.1.0"
+notes = "Real OpenSSH and a real Ubuntu userland. Commands actually execute."
+# A real shell answers in milliseconds, so the global window is almost pure
+# waiting. At 200 ms a calibration run of 200 sessions takes about an hour
+# instead of seven. This changes wall clock only: the last-byte timestamp is
+# taken when that byte arrives, so no recorded timing moves.
+idle_ms = 200
+
+# Classical honeypot baseline, the one the whole literature compares against.
+[[targets]]
+name = "cowrie"
+kind = "classic_honeypot"
+host = "127.0.0.1"
+port = 2201
+username = "root"
+password = "root"
+repo = "https://github.com/cowrie/cowrie"
+commit = "a4237125e8a55493b342dea9e4ede052f9314193"
+# Cowrie serves from templates, so it answers as fast as the real system.
+idle_ms = 200
+
+[[targets]]
+name = "beelzebub"
+kind = "llm_honeypot"
+host = "127.0.0.1"
+port = 2202
+username = "root"
+password = "root"
+repo = "https://github.com/mariocandela/beelzebub"
+commit = "df6de36a087c867f7cce90a0d125351bd47b3343"
+backends = ["qwen3b", "qwen7b"]
+
+[[targets]]
+name = "deceive"
+kind = "llm_honeypot"
+host = "127.0.0.1"
+port = 2203
+username = "root"
+password = "root"
+repo = "https://github.com/splunk/DECEIVE"
+commit = "cce98f3dcd9de74f32f683998e95aa19b795724e"
+backends = ["qwen3b", "qwen7b"]
+
+[[targets]]
+name = "shellm"
+kind = "llm_honeypot"
+host = "127.0.0.1"
+port = 2204
+username = "root"
+password = "root"
+repo = "https://github.com/stratosphereips/shelLM"
+commit = "a480a5c6e623390786e662c34b6d1ecd8bb98af4"
+backends = ["qwen3b", "qwen7b"]
+notes = "Representative of the Stratosphere lineage, which also includes VelLMes and AdvancedShelLM."
+
+[[targets]]
+name = "honeygpt"
+kind = "llm_honeypot"
+host = "127.0.0.1"
+port = 2205
+username = "root"
+password = "root"
+repo = "https://github.com/zyw-286/HoneyGPT"
+commit = "55b3e7396382f8d191d447db9b1b59b02c735d8f"
+backends = ["qwen3b", "qwen7b"]
+notes = "Hybrid: a static fast path in front of the model."
+
+[[targets]]
+name = "llmhoneypot"
+kind = "llm_honeypot"
+host = "127.0.0.1"
+port = 2206
+username = "root"
+password = "root"
+repo = "https://github.com/allsmog/llm-honeypot"
+commit = "be2ab62fa6a9489469b0ac248cb9b5c74734961d"
+backends = ["qwen3b", "qwen7b"]
+notes = "Claims timing jitter and a local fast path to resist fingerprinting."
+
+# ---------------------------------------------------------------------------
+# Probes
+# ---------------------------------------------------------------------------
+
+[probes]
+vectors = ["timing", "state", "compound"]
+exclude = []
+
+# Silence that marks the end of a reply. This must be larger than the slowest
+# gap between tokens on the slowest backend, or a generated reply gets cut off
+# mid-stream. The wait itself is excluded from the timings, because the
+# last-byte timestamp is taken when that byte arrives rather than when we stop
+# waiting. Raise it if you see truncated replies in the transcripts.
+idle_ms = 1500
+timeout_s = 120.0
+
+# Repetitions inside the timing probes, which need several samples to estimate
+# a coefficient of variation.
+repeats = 5
+
+# Largest output the timing probes ask for, in lines of seq. This is the single
+# biggest lever on how long a run takes, because a generator pays per token for
+# every line. At 120 lines one long command is roughly 300 tokens, which a
+# CPU-bound 7B model answers inside timeout_s. Asking for thousands of lines
+# would exceed the timeout and return nothing at all.
+#
+# The timing features are slopes and ratios, so a small ladder measures the
+# same mechanism as a large one. Raise this only for a backend fast enough to
+# keep up.
+max_seq_lines = 120
+
+# ---------------------------------------------------------------------------
+# Egress canary. A listener on your own machine. No internet host is ever
+# contacted, which is what keeps the ethics position simple.
+# ---------------------------------------------------------------------------
+
+[canary]
+enabled = true
+host = "172.17.0.1"
+port = 8731
+bind_host = "0.0.0.0"
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+[run]
+out_dir = "out"
+
+# Calibration seeds shape the decision rule. Evaluation seeds are scored with
+# it. They must not overlap, and the config refuses to load if they do.
+calibration_seeds = [1, 2]
+evaluation_seeds = [3, 4, 5, 6, 7]
+
+# Skip cells already recorded. A 16 hour run splits across evenings this way,
+# and killing the process never loses finished work.
+resume = true

@@ -1,0 +1,16 @@
+# Bring up the real-system control:
+#   docker compose -f targets/real/compose.yml up -d --build
+#
+# It listens on 127.0.0.1:2200, which is what honeytell.toml expects.
+services:
+  real:
+    build:
+      context: .
+      args:
+        USERNAME: analyst
+        PASSWORD: analyst
+    image: honeytell/real-sshd:0.1.0
+    container_name: honeytell-real
+    ports:
+      - "127.0.0.1:2200:22"
+    restart: unless-stopped

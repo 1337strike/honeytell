@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "honeytell"
+version = "0.1.0"
+description = "Fingerprint LLM-powered shell honeypots from the client side"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [{ name = "1337strike" }]
+keywords = ["honeypot", "ssh", "fingerprinting", "llm", "security"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+]
+dependencies = [
+  "asyncssh==2.24.1",
+  "pydantic==2.14.3",
+]
+
+[project.optional-dependencies]
+analysis = ["numpy==2.5.4", "scipy==1.18.1"]
+figures = ["matplotlib==3.11.2"]
+dev = ["pytest==9.2.0", "pytest-asyncio==1.5.0", "ruff==0.17.5"]
+
+[project.scripts]
+honeytell = "honeytell.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/1337strike/honeytell"
+Issues = "https://github.com/1337strike/honeytell/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/honeytell"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
