@@ -176,11 +176,17 @@ async def run_all(
         res = await run_cell(cfg, cell, probe_list)
         store.write_cell(res, specs)
         results.append(res)
-        bad = len(res.errors)
-        progress(
-            f"    {len(res.steps)} commands, {time.monotonic() - t0:.1f}s"
-            + (f", {bad} probe error(s)" if bad else "")
-        )
+        took = time.monotonic() - t0
+        if "__connect__" in res.errors:
+            # No probe ran, so calling this a probe error reads as though the
+            # suite failed rather than the target being absent.
+            progress(f"    unreachable, will be retried: {res.errors['__connect__']}")
+        else:
+            bad = len([k for k in res.errors if not k.startswith("__")])
+            progress(
+                f"    {len(res.steps)} commands, {took:.1f}s"
+                + (f", {bad} probe error(s)" if bad else "")
+            )
         if "__idle_ms__" in res.errors:
             progress(f"    WARNING: {res.errors['__idle_ms__']}")
     return results
