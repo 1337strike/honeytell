@@ -46,8 +46,14 @@ class LengthSlope(Probe):
         FeatureSpec(
             "slope_r2",
             "float",
-            "Fit quality of the time against size regression",
+            "Fit quality of the time against size regression. Diagnostic only",
             higher_means_simulated=True,
+            # Measured on 227 real sessions this runs from 0.001 to 0.977, so
+            # it covers the whole range a generator could produce. A real
+            # session landing near the top would earn the largest score the
+            # test can award, which is how a control gets flagged. It reads
+            # well next to a transcript and decides nothing.
+            decisive=False,
         ),
     )
 
@@ -116,8 +122,9 @@ class RepeatVariance(Probe):
 class EmptyVersusLong(Probe):
     """Compare a command that prints nothing with one that prints a lot.
 
-    On a real shell both return almost immediately, so the ratio sits near one.
-    A generator pays per token, so the long one costs far more.
+    Measured on a real shell the ratio sits between 1.4 and 4.0. A generator
+    pays per token for the long one while the silent one costs it a single
+    token, so the ratio climbs far above that.
     """
 
     id = "timing.empty_vs_long"
@@ -151,9 +158,14 @@ class EmptyVersusLong(Probe):
 class StreamFraction(Probe):
     """How much of the reply arrives after the first byte?
 
-    A real shell writes its output in one burst, so the first byte and the last
-    byte are nearly simultaneous. A streaming generator spends most of the wall
-    clock between them.
+    The original reasoning here was wrong and the measurements corrected it. A
+    real shell does not deliver its output in a single read: over SSH with a
+    PTY even a few hundred bytes arrive in several chunks, and 227 real
+    sessions put this between 0.612 and 0.779.
+
+    What makes it useful is not that the value is low, which it is not, but
+    that it is tight. A generator producing tokens one at a time pushes the
+    share above that band and stays there.
     """
 
     id = "timing.stream_fraction"

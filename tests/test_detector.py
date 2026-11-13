@@ -186,3 +186,74 @@ class TestDecide:
         assert back.boundary == cal.boundary
         assert set(back.features) == set(cal.features)
         assert back.evidence("p.a", 9999.0) == cal.evidence("p.a", 9999.0)
+
+
+class TestDecisiveFeatures:
+    """A feature whose values on a real system already span the range the
+    alternative occupies cannot separate them, and a real session landing at
+    the edge of such a range earns the largest score the test can award. That
+    is how a control gets flagged, so those features are recorded and not
+    scored."""
+
+    def test_slope_r2_is_not_decisive(self):
+        from honeytell.probes import timing
+        probe = next(p for p in timing.PROBES if p.id == "timing.length_slope")
+        by_name = {f.name: f for f in probe.features}
+        assert by_name["slope_r2"].decisive is False
+        assert by_name["ms_per_kib"].decisive is True
+
+    def test_scoring_order_excludes_non_decisive(self):
+        from honeytell.analysis.report import feature_order
+        scored = feature_order(decisive_only=True)
+        everything = feature_order(decisive_only=False)
+        assert "timing.length_slope:slope_r2" in everything
+        assert "timing.length_slope:slope_r2" not in scored
+        assert len(scored) < len(everything)
+
+    def test_a_non_decisive_feature_cannot_push_a_verdict(self):
+        cal = Calibration()
+        fc = cal.ensure("timing.length_slope:slope_r2", "float", True)
+        for v in (0.1, 0.2, 0.3):
+            fc.observe(v)
+        cal.boundary = 0.5
+        # Present in the calibration but absent from the scored order, so an
+        # extreme value contributes nothing.
+        assert decide(cal, []).simulated is False
+
+    def test_every_decisive_float_declares_a_direction(self):
+        from honeytell import probes as registry
+        for probe in registry.all_probes():
+            for f in probe.features:
+                if f.decisive and f.kind == "float":
+                    assert f.higher_means_simulated is not None
+
+
+class TestMeasuredRealRanges:
+    """Ranges observed over 227 sessions against the real control container on
+    an i7-10610U. Recorded as a guard: a feature whose real-system range grows
+    to cover the alternative has stopped being a discriminator."""
+
+    OBSERVED = {
+        "ms_per_kib": (-10.716, 11.760),
+        "slope_r2": (0.001, 0.977),
+        "stream_share": (0.612, 0.779),
+        "long_over_silent": (1.435, 4.047),
+        "total_cv": (0.022, 0.708),
+        "bytes_cv": (0.0, 0.0),
+    }
+
+    def test_slope_r2_covers_the_whole_unit_range(self):
+        """The reason it is not decisive, stated as a fact rather than a view."""
+        low, high = self.OBSERVED["slope_r2"]
+        assert low < 0.05 and high > 0.95
+
+    def test_stream_share_is_tight_and_not_near_zero(self):
+        """The original rationale claimed it sits near zero on a real shell.
+        It does not; what makes it work is the width of the band."""
+        low, high = self.OBSERVED["stream_share"]
+        assert low > 0.5
+        assert (high - low) < 0.2
+
+    def test_bytes_cv_is_degenerate_on_a_real_shell(self):
+        """An identical command returns identical bytes, every time."""
+        assert self.OBSERVED["bytes_cv"] == (0.0, 0.0)

@@ -27,6 +27,15 @@ class FeatureSpec:
     kind: Literal["bool", "float"]
     description: str
     higher_means_simulated: bool | None = None
+    decisive: bool = True
+    """Whether this feature contributes evidence to the verdict.
+
+    A feature whose values on a real system already reach the range the
+    alternative lives in cannot separate them, and worse, a real session that
+    lands at the edge of such a range earns the largest score the test can
+    award. Those stay recorded, because they are useful for reading a
+    transcript, and stay out of the decision.
+    """
 
     def __post_init__(self) -> None:
         if self.kind == "float" and self.higher_means_simulated is None:

@@ -131,10 +131,20 @@ def load_sessions(run_dir: pathlib.Path) -> tuple[list[Session], dict[str, str]]
     return list(grouped.values()), kinds
 
 
-def feature_order(vectors: list[str] | None = None) -> list[str]:
-    """Feature names in the order the probes produce them."""
+def feature_order(vectors: list[str] | None = None, *,
+                  decisive_only: bool = True) -> list[str]:
+    """Feature names in the order the probes produce them.
+
+    Scoring uses the decisive ones only. Everything else is still recorded, so
+    a transcript can be read against the full set.
+    """
     probe_list = registry.select(vectors or list(registry.KNOWN_VECTORS))
-    return [f"{p.id}:{f.name}" for p in probe_list for f in p.features]
+    return [
+        f"{p.id}:{f.name}"
+        for p in probe_list
+        for f in p.features
+        if f.decisive or not decisive_only
+    ]
 
 
 def build_calibration(
@@ -304,7 +314,10 @@ def write_report(
     add(f"- Real sessions shaping the boundary: {len(for_boundary)} "
         f"({_seed_range(for_boundary)})")
     add(f"- Features with a usable reference distribution: "
-        f"{len(cal.usable_features())} of {len(order)}")
+        f"{len(cal.usable_features())} of {len(order)} decisive")
+    skipped = [f for f in feature_order(decisive_only=False) if f not in order]
+    if skipped:
+        add(f"- Recorded but not used for the verdict: {', '.join(f'`{s}`' for s in skipped)}")
     add("")
     add("The rule is calibrated on the real system alone. No honeypot session "
         "influences it, so adding a target never changes how the others are judged.")
@@ -438,7 +451,7 @@ def analyse(run_dir: pathlib.Path, alpha: float = 0.01) -> dict:
     sessions, kinds = load_sessions(run_dir)
     if not sessions:
         raise RuntimeError(f"no sessions recorded in {run_dir}")
-    order = feature_order()
+    order = feature_order(decisive_only=True)
     cal, for_features, for_boundary = build_calibration(sessions, kinds, order, alpha)
     cal.save(run_dir / "calibration.json")
     scored = score(cal, sessions, order)
