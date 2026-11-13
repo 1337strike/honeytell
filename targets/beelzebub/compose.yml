@@ -1,0 +1,32 @@
+# Beelzebub, one container per backend.
+#
+# Each honeypot and backend pair is its own listener, so the two never share a
+# process and nothing can carry over between them.
+services:
+  beelzebub-qwen3b:
+    build:
+      context: ../beelzebub/src
+    image: honeytell/beelzebub:pinned
+    container_name: honeytell-beelzebub-qwen3b
+    networks: [honeytell-lab]
+    ports:
+      - "127.0.0.1:2210:2222"
+    volumes:
+      - "./qwen3b:/configurations:ro"
+    restart: unless-stopped
+
+  beelzebub-qwen7b:
+    build:
+      context: ../beelzebub/src
+    image: honeytell/beelzebub:pinned
+    container_name: honeytell-beelzebub-qwen7b
+    networks: [honeytell-lab]
+    ports:
+      - "127.0.0.1:2211:2222"
+    volumes:
+      - "./qwen7b:/configurations:ro"
+    restart: unless-stopped
+
+networks:
+  honeytell-lab:
+    external: true

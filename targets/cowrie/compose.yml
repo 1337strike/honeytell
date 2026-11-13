@@ -1,0 +1,24 @@
+# Cowrie, the classical medium-interaction baseline the literature compares
+# against. No language model: it answers from templates.
+#
+# Built from the pinned commit rather than a published tag, so the container
+# matches the commit honeytell.toml records. Run targets/fetch-sources.sh first.
+services:
+  cowrie:
+    build:
+      context: ../cowrie/src
+      dockerfile: docker/Dockerfile
+    image: honeytell/cowrie:pinned
+    container_name: honeytell-cowrie
+    networks: [honeytell-lab]
+    ports:
+      - "127.0.0.1:2201:2222"
+    volumes:
+      # If this path is wrong for the pinned commit, cowrie keeps its own
+      # defaults and honeytell doctor will report the login failure.
+      - "./userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro"
+    restart: unless-stopped
+
+networks:
+  honeytell-lab:
+    external: true

@@ -49,6 +49,14 @@ class TargetSpec(BaseModel):
         default_factory=list,
         description="Backend names this target is run against. Empty for non-LLM targets.",
     )
+    backend_ports: dict[str, int] = Field(
+        default_factory=dict,
+        description="Port per backend, when a honeypot runs as one container "
+                    "per backend. Each pair is a separate process listening "
+                    "somewhere of its own, so a single port cannot describe a "
+                    "target that is run against two models. Names not listed "
+                    "here fall back to `port`.",
+    )
     idle_ms: int | None = Field(
         default=None,
         description="Override the global idle framing for this target. This "
@@ -69,6 +77,20 @@ class TargetSpec(BaseModel):
         if not 1 <= v <= 65535:
             raise ValueError("port must be between 1 and 65535")
         return v
+
+    @field_validator("backend_ports")
+    @classmethod
+    def _backend_port_range(cls, v: dict[str, int]) -> dict[str, int]:
+        for name, port in v.items():
+            if not 1 <= port <= 65535:
+                raise ValueError(f"port for backend {name!r} must be between 1 and 65535")
+        return v
+
+    def port_for(self, backend: str | None) -> int:
+        """Where to reach this target when run against ``backend``."""
+        if backend and backend in self.backend_ports:
+            return self.backend_ports[backend]
+        return self.port
 
 
 class CanarySpec(BaseModel):
@@ -179,10 +201,26 @@ class Config(BaseModel):
         """Report config mistakes that would only surface mid-run."""
         problems: list[str] = []
         names = {b.name for b in self.backends}
+        used: dict[int, str] = {}
         for t in self.targets:
             for b in t.backends:
                 if b not in names:
                     problems.append(f"target {t.name!r} refers to unknown backend {b!r}")
+            for b in t.backend_ports:
+                if b not in t.backends:
+                    problems.append(
+                        f"target {t.name!r} maps a port for backend {b!r}, which it "
+                        f"does not run against"
+                    )
+            for backend in (t.backends or [None]):
+                port = t.port_for(backend)
+                owner = f"{t.name}/{backend}" if backend else t.name
+                if port in used:
+                    problems.append(
+                        f"{owner} and {used[port]} both listen on port {port}; "
+                        f"each honeypot and backend pair is its own process"
+                    )
+                used[port] = owner
             if t.kind == "llm_honeypot" and not t.backends:
                 problems.append(f"target {t.name!r} is an llm_honeypot with no backends")
             if t.kind != "llm_honeypot" and t.backends:

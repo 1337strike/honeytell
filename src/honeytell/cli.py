@@ -12,6 +12,8 @@ import sys
 import urllib.error
 import urllib.request
 
+import asyncssh
+
 from honeytell import __version__
 from honeytell import probes as registry
 from honeytell.analysis.report import analyse
@@ -57,6 +59,36 @@ def _check_ollama(url: str) -> tuple[bool, str]:
     return True, f"{len(names)} model(s): {', '.join(names) if names else 'none pulled'}"
 
 
+async def _probe_login(cfg: Config, target, backend: str | None) -> tuple[bool, str]:
+    """Open a real session and read one command back.
+
+    A TCP check only proves something is listening. Most of what goes wrong
+    with a freshly deployed honeypot is authentication, and finding that out
+    now is worth a second per target.
+    """
+    from honeytell.transport.ssh import open_ssh_shell
+
+    port = target.port_for(backend)
+    try:
+        async with open_ssh_shell(
+            target.host, port=port,
+            username=target.username, password=target.password,
+            client_key=target.client_key,
+            idle_ms=target.idle_ms or cfg.probes.idle_ms,
+            timeout_s=15.0, connect_timeout_s=15.0,
+        ) as sh:
+            step = await sh.run("echo honeytell-doctor", timeout_s=30.0)
+            if step.timed_out:
+                return False, "connected and logged in, but no reply to a command"
+            if "honeytell-doctor" not in step.text:
+                return True, f"logged in; echo returned {step.text.strip()[:40]!r}"
+            return True, "logged in, shell answers"
+    except asyncssh.PermissionDenied:
+        return False, "authentication refused; check username and password"
+    except Exception as exc:  # noqa: BLE001 - doctor reports, it does not raise
+        return False, f"{type(exc).__name__}: {exc}"
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     ok = True
     print(f"honeytell {__version__}")
@@ -96,12 +128,24 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             if not reachable:
                 ok = False
         for t in cfg.targets:
-            try:
-                with socket.create_connection((t.host, t.port), timeout=3):
-                    print(f"  target {t.name} at {t.host}:{t.port}: open")
-            except OSError as exc:
-                print(f"  target {t.name} at {t.host}:{t.port}: "
-                      f"closed ({type(exc).__name__})")
+            for backend in (t.backends or [None]):
+                port = t.port_for(backend)
+                label = f"{t.name}/{backend}" if backend else t.name
+                try:
+                    with socket.create_connection((t.host, port), timeout=3):
+                        pass
+                except OSError as exc:
+                    print(f"  target {label} at {t.host}:{port}: "
+                          f"closed ({type(exc).__name__})")
+                    continue
+                if args.no_login:
+                    print(f"  target {label} at {t.host}:{port}: open")
+                    continue
+                ok_login, detail = asyncio.run(_probe_login(cfg, t, backend))
+                mark = "ok" if ok_login else "FAILED"
+                print(f"  target {label} at {t.host}:{port}: {mark} ({detail})")
+                if not ok_login:
+                    ok = False
         for p in problems:
             print(f"  config problem: {p}")
             ok = False
@@ -141,16 +185,20 @@ def _preflight(cfg: Config, cells) -> list[str]:
     records sessions with no features, and those are excluded from the report,
     so an overnight run against targets that were never up produces nothing.
     """
-    wanted = {c.target for c in cells}
     down: list[str] = []
-    for t in cfg.targets:
-        if t.name not in wanted:
+    seen: set[tuple[str, int]] = set()
+    for c in cells:
+        t = cfg.target(c.target)
+        port = t.port_for(c.backend)
+        if (t.host, port) in seen:
             continue
+        seen.add((t.host, port))
+        label = f"{c.target}/{c.backend}" if c.backend else c.target
         try:
-            with socket.create_connection((t.host, t.port), timeout=3):
+            with socket.create_connection((t.host, port), timeout=3):
                 pass
         except OSError:
-            down.append(f"{t.name} ({t.host}:{t.port})")
+            down.append(f"{label} ({t.host}:{port})")
     return down
 
 
@@ -175,7 +223,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"  - {d}")
         print("Their sessions will be recorded as unreachable and left out of "
               "the report.")
-        if len(down) == len({c.target for c in cells}):
+        reachable_pairs = {
+            (cfg.target(c.target).host, cfg.target(c.target).port_for(c.backend))
+            for c in cells
+        }
+        if len(down) == len(reachable_pairs):
             print("\nNothing in this plan is reachable. Bring a target up first, "
                   "or run honeytell doctor to see what is missing.")
             if not args.force:
@@ -239,6 +291,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("doctor", help="check the environment and the config")
     d.add_argument("--config", default="honeytell.toml")
+    d.add_argument("--no-login", action="store_true",
+                   help="only check that the port is open, without logging in")
     d.set_defaults(func=cmd_doctor)
 
     v = sub.add_parser("validate", help="check the config without running anything")

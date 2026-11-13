@@ -97,7 +97,7 @@ async def run_cell(cfg: Config, cell: CellPlan, probe_list: tuple[Probe, ...]) -
     try:
         async with open_ssh_shell(
             target.host,
-            port=target.port,
+            port=target.port_for(cell.backend),
             username=target.username,
             password=target.password,
             client_key=target.client_key,

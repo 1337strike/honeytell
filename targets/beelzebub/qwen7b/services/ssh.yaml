@@ -1,0 +1,22 @@
+# Beelzebub SSH service backed by a local model.
+#
+# Keys come from internal/plugins/llm-integration.go at the pinned commit:
+# llmProvider accepts "ollama" or "openai", and host overrides the endpoint,
+# which for ollama defaults to http://localhost:11434/api/chat. Inside a
+# container localhost is the container, so it points at the lab gateway.
+apiVersion: "v1"
+protocol: "ssh"
+address: ":2222"
+description: "honeytell target: beelzebub on qwen2.5:7b-instruct-q4_K_M"
+commands:
+  - regex: "^(.+)$"
+    plugin: "LLMHoneypot"
+serverVersion: "OpenSSH"
+serverName: "ubuntu"
+passwordRegex: "^(.*)$"
+deadlineTimeoutSeconds: 6000
+plugin:
+  llmProvider: "ollama"
+  llmModel: "qwen2.5:7b-instruct-q4_K_M"
+  host: "http://10.88.0.1:11434/api/chat"
+  rateLimitEnabled: false

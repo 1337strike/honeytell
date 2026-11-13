@@ -141,8 +141,10 @@ honeytell doctor --config honeytell.toml
 ```
 
 This reports whether Docker and Ollama are on your PATH, whether each backend
-answers, and whether each target port is open. Fix anything it calls out before
-running.
+answers, and whether each target can be logged into. It opens a real session
+and runs a command, so it catches wrong credentials rather than only a closed
+port. Fix anything it calls out before running. Pass `--no-login` to stop at
+the port check.
 
 See the probes and the features each one produces:
 
@@ -172,6 +174,23 @@ Re-analyse a finished run without touching the targets again:
 
 ```bash
 honeytell report --run out/run-abc123456789
+```
+
+## Deploying the targets
+
+`targets/README.md` has the full procedure: the lab network, the Ollama bind,
+fetching each honeypot at its pinned commit, and building. The short version:
+
+```bash
+docker network create --driver bridge --subnet 10.88.0.0/24 --gateway 10.88.0.1 honeytell-lab
+```
+
+```bash
+./targets/fetch-sources.sh
+```
+
+```bash
+for t in real cowrie beelzebub deceive; do docker compose -f "targets/$t/compose.yml" up -d --build; done
 ```
 
 ## The real-system control

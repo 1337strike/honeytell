@@ -82,7 +82,9 @@ idle_ms = 200
 name = "beelzebub"
 kind = "llm_honeypot"
 host = "127.0.0.1"
-port = 2202
+port = 2210
+# One container per backend, so each pair has its own port.
+backend_ports = { qwen3b = 2210, qwen7b = 2211 }
 username = "root"
 password = "root"
 repo = "https://github.com/mariocandela/beelzebub"
@@ -93,7 +95,9 @@ backends = ["qwen3b", "qwen7b"]
 name = "deceive"
 kind = "llm_honeypot"
 host = "127.0.0.1"
-port = 2203
+port = 2220
+# One container per backend, so each pair has its own port.
+backend_ports = { qwen3b = 2220, qwen7b = 2221 }
 username = "root"
 password = "root"
 repo = "https://github.com/splunk/DECEIVE"
@@ -104,7 +108,9 @@ backends = ["qwen3b", "qwen7b"]
 name = "shellm"
 kind = "llm_honeypot"
 host = "127.0.0.1"
-port = 2204
+port = 2230
+# One container per backend, so each pair has its own port.
+backend_ports = { qwen3b = 2230, qwen7b = 2231 }
 username = "root"
 password = "root"
 repo = "https://github.com/stratosphereips/shelLM"
@@ -116,7 +122,9 @@ notes = "Representative of the Stratosphere lineage, which also includes VelLMes
 name = "honeygpt"
 kind = "llm_honeypot"
 host = "127.0.0.1"
-port = 2205
+port = 2240
+# One container per backend, so each pair has its own port.
+backend_ports = { qwen3b = 2240, qwen7b = 2241 }
 username = "root"
 password = "root"
 repo = "https://github.com/zyw-286/HoneyGPT"
@@ -128,7 +136,9 @@ notes = "Hybrid: a static fast path in front of the model."
 name = "llmhoneypot"
 kind = "llm_honeypot"
 host = "127.0.0.1"
-port = 2206
+port = 2250
+# One container per backend, so each pair has its own port.
+backend_ports = { qwen3b = 2250, qwen7b = 2251 }
 username = "root"
 password = "root"
 repo = "https://github.com/allsmog/llm-honeypot"

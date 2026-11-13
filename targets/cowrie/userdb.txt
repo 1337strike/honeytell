@@ -1,0 +1,3 @@
+# Accept root with any password, so the credential is one less thing that can
+# differ between targets. Format is username:uid:password, where * matches any.
+root:x:*

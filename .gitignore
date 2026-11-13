@@ -8,3 +8,4 @@ venv/
 out/
 research/*.local.md
 honeytell-*.zip
+targets/*/src/

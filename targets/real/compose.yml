@@ -1,7 +1,8 @@
-# Bring up the real-system control:
-#   docker compose -f targets/real/compose.yml up -d --build
+# The real-system control. Listens on 127.0.0.1:2200.
 #
-# It listens on 127.0.0.1:2200, which is what honeytell.toml expects.
+# It sits on the same lab network as every honeypot, so the path a probe
+# travels is identical for all of them and cannot account for a detection.
+# See targets/README.md for how to create that network.
 services:
   real:
     build:
@@ -11,6 +12,11 @@ services:
         PASSWORD: analyst
     image: honeytell/real-sshd:0.1.0
     container_name: honeytell-real
+    networks: [honeytell-lab]
     ports:
       - "127.0.0.1:2200:22"
     restart: unless-stopped
+
+networks:
+  honeytell-lab:
+    external: true

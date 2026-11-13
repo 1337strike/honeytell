@@ -146,6 +146,8 @@ def collect(cfg: Config, config_sha256: str, run_id: str) -> dict:
                 "commit": t.commit,
                 "image": t.image,
                 "backends": t.backends,
+                "port": t.port,
+                "backend_ports": t.backend_ports,
             }
             for t in cfg.targets
         ],

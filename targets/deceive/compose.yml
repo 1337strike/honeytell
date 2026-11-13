@@ -1,0 +1,42 @@
+# DECEIVE, one container per backend.
+#
+# OLLAMA_HOST is what langchain-ollama's client reads to find the server.
+# Inside a container localhost is the container, so it points at the lab
+# gateway.
+#
+# trimmer_max_tokens is lowered from the upstream default of 64000. The backend
+# is served with a context of 8192, and asking the honeypot to send more
+# history than the window holds would have the server truncate it, which is a
+# property of our setup rather than of the honeypot.
+services:
+  deceive-qwen3b:
+    build:
+      context: ../deceive/src
+      dockerfile: ../Dockerfile
+    image: honeytell/deceive:pinned
+    container_name: honeytell-deceive-qwen3b
+    networks: [honeytell-lab]
+    ports:
+      - "127.0.0.1:2220:22"
+    environment:
+      OLLAMA_HOST: "http://10.88.0.1:11434"
+    command: ["-l", "ollama", "-m", "qwen2.5:3b-instruct-q4_K_M", "-t", "6000", "-u", "root=root"]
+    restart: unless-stopped
+
+  deceive-qwen7b:
+    build:
+      context: ../deceive/src
+      dockerfile: ../Dockerfile
+    image: honeytell/deceive:pinned
+    container_name: honeytell-deceive-qwen7b
+    networks: [honeytell-lab]
+    ports:
+      - "127.0.0.1:2221:22"
+    environment:
+      OLLAMA_HOST: "http://10.88.0.1:11434"
+    command: ["-l", "ollama", "-m", "qwen2.5:7b-instruct-q4_K_M", "-t", "6000", "-u", "root=root"]
+    restart: unless-stopped
+
+networks:
+  honeytell-lab:
+    external: true
