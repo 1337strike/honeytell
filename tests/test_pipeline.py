@@ -279,3 +279,52 @@ class TestSessionOrdering:
         cells = plan(cfg, extra_real_seeds=20, extra_real_eval_seeds=10)
         assert sum(1 for c in cells if c.target == "hp") == 2
         assert sum(1 for c in cells if c.target == "real") == 32
+
+
+class TestResumeSkipsOnlyFinishedWork:
+    """Running the suite before the targets are up must not consume them.
+
+    Every unreachable cell is still written to the manifest, because the run
+    needs a record of what it tried. If resume treated those as finished, a
+    later run with the targets now listening would skip them and the honeypots
+    would never be probed at all.
+    """
+
+    async def _unreachable(self, target: str, seed: int) -> CellResult:
+        res = CellResult(target=target, target_kind="llm_honeypot",
+                         backend="small", seed=seed, role="evaluation")
+        res.errors["__connect__"] = "ConnectionRefusedError"
+        return res
+
+    async def test_unreachable_cells_are_retried(self, tmp_path):
+        store = Store(tmp_path, "run-retry")
+        specs = registry.feature_specs(PROBE_LIST)
+        res = await self._unreachable("beelzebub", 3)
+        store.write_cell(res, specs)
+        assert res.key not in store.done_cells()
+        assert res.key not in Store(tmp_path, "run-retry").done_cells()
+
+    async def test_a_finished_cell_is_not_repeated(self, tmp_path):
+        store = Store(tmp_path, "run-done")
+        specs = registry.feature_specs(PROBE_LIST)
+        res = await _cell("real", "real", None, 1, "calibration", honest_responder)
+        store.write_cell(res, specs)
+        assert res.key in store.done_cells()
+
+    async def test_probe_errors_still_count_as_finished(self, tmp_path):
+        """A probe that failed produced a result; the session is done."""
+        store = Store(tmp_path, "run-probe-err")
+        specs = registry.feature_specs(PROBE_LIST)
+        res = await _cell("real", "real", None, 1, "calibration", honest_responder)
+        res.errors["timing.length_slope"] = "TimeoutError: too slow"
+        store.write_cell(res, specs)
+        assert res.key in store.done_cells()
+
+    async def test_a_later_success_replaces_an_earlier_failure(self, tmp_path):
+        store = Store(tmp_path, "run-mixed")
+        specs = registry.feature_specs(PROBE_LIST)
+        store.write_cell(await self._unreachable("beelzebub", 3), specs)
+        good = await _cell("beelzebub", "llm_honeypot", "small", 3, "evaluation",
+                           hallucinating_responder)
+        store.write_cell(good, specs)
+        assert good.key in store.done_cells()

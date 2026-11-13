@@ -9,7 +9,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 clone_at() {
-  local name="$1" url="$2" commit="$3" dest="$name/src"
+  # Separate statements on purpose: every argument to `local` is expanded
+  # before any of its assignments take effect, so building dest from name on
+  # the same line reads an unset variable.
+  local name="$1"
+  local url="$2"
+  local commit="$3"
+  local dest="$name/src"
   if [ -d "$dest/.git" ]; then
     echo "== $name: updating to $commit"
     git -C "$dest" fetch --quiet origin "$commit" 2>/dev/null || git -C "$dest" fetch --quiet origin

@@ -82,7 +82,13 @@ class Store:
                 csv.writer(fh).writerow(header)
 
     def done_cells(self) -> set[str]:
-        """Cell keys already recorded, read back from the manifest."""
+        """Cell keys that count as finished, read back from the manifest.
+
+        A cell that never got a shell does not count. Running the suite before
+        the targets are up would otherwise record every one of them as done,
+        and a later run, with the targets now listening, would skip them.
+        Probe errors are different: those are results, and the cell is finished.
+        """
         manifest = self.dir / "cells.jsonl"
         if not manifest.exists():
             return set()
@@ -91,9 +97,14 @@ class Store:
             if not line.strip():
                 continue
             try:
-                keys.add(json.loads(line)["key"])
+                entry = json.loads(line)
+                key = entry["key"]
             except (json.JSONDecodeError, KeyError):
                 continue
+            if "__connect__" in (entry.get("errors") or {}):
+                keys.discard(key)
+                continue
+            keys.add(key)
         return keys
 
     def write_cell(self, result: CellResult, specs: dict) -> None:
