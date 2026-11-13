@@ -86,3 +86,63 @@ confound produced a twentyfold error in the rate.
 The full-grid run has not been possible: no honeypot has been deployed. Every
 number here describes the real control alone, and none of it says anything yet
 about whether a honeypot is detectable.
+
+## Second baseline, after the ordering fix
+
+Run id `run-7039552598d7`, 307 real sessions: 202 calibration split into 101
+for the reference distributions and 101 for the threshold, plus 105 held out
+for evaluation.
+
+| | first run | second run |
+|---|---|---|
+| false positive rate | 0.200 (1 of 5) | 0.029 (3 of 105) |
+| 95% Wilson interval | 0.036 to 0.624 | 0.010 to 0.081 |
+| threshold source | too coarse to place | order statistic 101 of 101 |
+| vector responsible | timing | timing |
+
+Against a true rate of 0.01, seeing 3 or more in 105 has probability 0.089, so
+the observed rate is not distinguishable from the target. The interleaving fix
+worked and the remaining gap is sampling noise.
+
+`compound` and `state` produced no false positive in 105 sessions. Every one
+came from `timing`, which is consistent with the first run and with those
+features being the noisy ones.
+
+## The threshold is now split conformal
+
+The first implementation searched for the smallest observed value whose
+exceedance was at or below alpha. At n = 101 that coincides with the conformal
+answer, but it was a rule with no stated guarantee, which is not something to
+put in a paper.
+
+The threshold is now the k-th smallest score with k = ceil((n + 1)(1 - alpha)),
+the split-conformal quantile. It bounds the probability that a fresh real
+session crosses it by alpha, in finite samples, with no assumption about how
+the scores are distributed. That last part matters here: the timing features
+are correlated and heavy tailed, so anything resting on normality would not
+hold.
+
+Such a k exists only when n >= 1/alpha - 1. At alpha 0.01 and n = 101 the
+threshold sits at the maximum, the weakest position it can occupy, and the
+realised rate scatters widely around alpha. Larger calibration samples place it
+away from the maximum:
+
+| calibration sessions | order statistic | tightest certifiable rate |
+|---|---|---|
+| 101 | 101 of 101 | 0.0098 |
+| 201 | 200 of 201 | 0.0050 |
+| 401 | 398 of 401 | 0.0025 |
+
+For the final run the calibration sample should be around 400 sessions, which
+at roughly 18 seconds each is about two hours against the control.
+
+## A seed numbering hazard, found while planning that
+
+The extra real seeds were numbered from the end of the configured seeds, so the
+calibration extras ran from 8 and the evaluation extras began after them. Asking
+for more calibration sessions therefore shifted where the evaluation extras
+started, and seeds already recorded in a run directory would change role while
+resume kept the stale entries.
+
+Calibration extras now start at 100000 and evaluation extras at 900000, so
+raising either count only appends.

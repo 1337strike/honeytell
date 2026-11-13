@@ -322,6 +322,14 @@ def write_report(
     add("The rule is calibrated on the real system alone. No honeypot session "
         "influences it, so adding a target never changes how the others are judged.")
     add("")
+    add("The threshold is a split-conformal quantile of the accumulated evidence "
+        "over real sessions, which bounds the chance that a fresh real session "
+        "crosses it. The bound is finite sample and assumes nothing about how the "
+        "scores are distributed, which matters because the timing features are "
+        "correlated and heavy tailed. It is a guarantee in expectation over "
+        "calibration draws, so a single run's observed rate scatters around alpha, "
+        "and the scatter narrows as the calibration sample grows.")
+    add("")
 
     if unreachable:
         add("## Targets that were not reachable")

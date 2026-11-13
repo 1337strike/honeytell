@@ -161,42 +161,36 @@ def fit_boundary(
     maxima.sort()
     n = len(maxima)
 
-    # The statistic is discrete. Evidence is an empirical p-value, so its
-    # resolution is bounded by the size of the reference sample, and many real
-    # sessions land on identical values. A plain quantile can therefore sit on
-    # a tie and flag far more than alpha of real sessions.
+    # Split conformal prediction. With n calibration scores the threshold is
+    # the k-th smallest, k = ceil((n + 1)(1 - alpha)), which bounds the chance
+    # that a fresh real session exceeds it by alpha. The bound is finite
+    # sample and needs no assumption about how the scores are distributed,
+    # which matters here because the timing features are correlated and
+    # heavy tailed.
     #
-    # So take the smallest observed value whose exceedance really is at or
-    # below alpha. Note that such a value can only exist when n >= 1/alpha,
-    # because the smallest non-zero exceedance is 1/n: the number of real
-    # sessions sets a floor on the rate that can be expressed at all.
-    candidates = sorted(set(maxima))
-    chosen: float | None = None
-    for c in candidates:
-        if sum(1 for m in maxima if m >= c) / n <= alpha:
-            chosen = c
-            break
+    # Such a k exists only when n >= 1/alpha - 1. Below that the sample cannot
+    # express the rate at all, and the record says so rather than quietly
+    # returning something weaker.
+    k = math.ceil((n + 1) * (1.0 - alpha))
 
-    if chosen is None:
-        # Nothing observed separates alpha of the sessions, either because
-        # there are too few of them or because the reference sample is too
-        # small to tell them apart. Sit just above the largest, so no real
-        # session is flagged, and report the rate the sample can actually
-        # support rather than the one that was asked for.
+    if k > n:
         cal.boundary = math.nextafter(maxima[-1], math.inf)
         cal.boundary_source = (
-            f"above the max of {n} real sessions; the statistic is too coarse to "
-            f"place a {alpha} boundary, so no real session is flagged and the true "
-            f"rate is below {1.0 / (n + 1):.4f}. Raise the number of real "
-            f"calibration sessions to resolve {alpha}: at least "
-            f"{int(math.ceil(1.0 / alpha))} are needed"
+            f"above the max of {n} real sessions: a split-conformal threshold "
+            f"for alpha {alpha} needs at least {math.ceil(1.0 / alpha) - 1} of "
+            f"them, so no real session is flagged and the rate this sample can "
+            f"certify is {1.0 / (n + 1):.4f}"
         )
         return cal
 
-    exceed = sum(1 for m in maxima if m >= chosen) / n
-    cal.boundary = chosen
+    # The verdict fires on score >= boundary, so sit one step above the k-th
+    # value to keep the comparison strict, as the guarantee assumes.
+    cal.boundary = math.nextafter(maxima[k - 1], math.inf)
+    exceed = sum(1 for m in maxima if m >= cal.boundary) / n
     cal.boundary_source = (
-        f"smallest value with exceedance <= {alpha} over {n} real sessions "
-        f"(observed {exceed:.4f})"
+        f"split-conformal threshold at order statistic {k} of {n} real "
+        f"sessions, bounding the false positive rate by {alpha} "
+        f"(calibration exceedance {exceed:.4f}, tightest rate this sample can "
+        f"certify {1.0 / (n + 1):.4f})"
     )
     return cal

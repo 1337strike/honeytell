@@ -79,22 +79,23 @@ class TestBoundary:
         assert math.isinf(cal.boundary)
         assert "disabled" in cal.boundary_source
 
-    def test_identical_sessions_cannot_place_a_boundary(self):
+    def test_identical_sessions_put_the_boundary_above_them_all(self):
         """Every session on one value leaves nothing to separate, so the
-        boundary sits above the maximum and nothing real is flagged."""
+        threshold lands above it and nothing real is flagged."""
         cal = self._cal()
         sessions = [[("p.a", 1.0), ("p.b", False)] for _ in range(200)]
         cal = fit_boundary(cal, sessions, alpha=0.01)
         assert math.isfinite(cal.boundary)
-        assert "too coarse" in cal.boundary_source
         assert not any(decide(cal, s).simulated for s in sessions)
 
-    def test_coarse_statistic_is_reported_rather_than_faked(self):
+    def test_threshold_is_the_conformal_order_statistic(self):
         cal = self._cal()
         sessions = [[("p.a", 1.0 + i * 0.01), ("p.b", False)] for i in range(200)]
         cal = fit_boundary(cal, sessions, alpha=0.01)
-        # Five reference values cannot resolve one percent.
-        assert "too coarse" in cal.boundary_source
+        # k = ceil((n + 1)(1 - alpha)) = ceil(201 * 0.99) = 199.
+        assert "order statistic 199 of 200" in cal.boundary_source
+        flagged = sum(1 for s in sessions if decide(cal, s).simulated)
+        assert flagged / len(sessions) <= 0.01
 
     def test_rich_sample_places_a_real_boundary(self):
         cal = self._rich_cal()
@@ -105,22 +106,37 @@ class TestBoundary:
         assert "conservative" not in cal.boundary_source
 
     def test_too_few_sessions_cannot_express_the_rate(self):
-        """With 20 sessions the smallest non-zero rate is 0.05, so a request
-        for 0.01 cannot be honoured and the record has to say so."""
+        """A conformal threshold for alpha needs at least 1/alpha - 1
+        calibration points. Twenty cannot certify one percent."""
         cal = self._rich_cal()
         sessions = [[("p.a", i * 0.05), ("p.b", False)] for i in range(20)]
         cal = fit_boundary(cal, sessions, alpha=0.01)
-        assert "too coarse" in cal.boundary_source
-        assert "at least 100 are needed" in cal.boundary_source
+        assert "needs at least 99" in cal.boundary_source
+        assert "0.0476" in cal.boundary_source  # the rate 20 sessions can certify
         assert not any(decide(cal, s).simulated for s in sessions)
 
     def test_an_achievable_rate_is_honoured_on_the_same_sessions(self):
         cal = self._rich_cal()
         sessions = [[("p.a", i * 0.05), ("p.b", False)] for i in range(20)]
         cal = fit_boundary(cal, sessions, alpha=0.05)
-        assert "exceedance" in cal.boundary_source
+        assert "order statistic" in cal.boundary_source
         flagged = sum(1 for s in sessions if decide(cal, s).simulated)
         assert flagged / len(sessions) <= 0.05
+
+    def test_the_guarantee_holds_on_held_out_sessions(self):
+        """The point of a conformal threshold: fit on one sample, and a fresh
+        sample from the same source exceeds it at most alpha of the time."""
+        import random
+        rng = random.Random(7)
+        cal = Calibration()
+        fc = cal.ensure("p.a", "float", True)
+        for _ in range(400):
+            fc.observe(rng.gauss(0, 1))
+        fit = [[("p.a", rng.gauss(0, 1))] for _ in range(400)]
+        cal = fit_boundary(cal, fit, alpha=0.05)
+        held_out = [[("p.a", rng.gauss(0, 1))] for _ in range(400)]
+        rate = sum(1 for s in held_out if decide(cal, s).simulated) / len(held_out)
+        assert rate <= 0.10, f"held-out rate {rate} far above alpha 0.05"
 
     def test_boundary_bounds_the_false_positive_rate(self):
         """The rate on real sessions must not exceed alpha by construction."""

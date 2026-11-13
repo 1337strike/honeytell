@@ -18,6 +18,9 @@ from honeytell.probes.base import Probe, ProbeContext
 from honeytell.store import CellResult, Store
 from honeytell.transport.ssh import open_ssh_shell
 
+CALIBRATION_SEED_BASE = 100_000
+EVALUATION_SEED_BASE = 900_000
+
 
 @dataclass(slots=True)
 class CellPlan:
@@ -56,11 +59,15 @@ def plan(
         seeds = [(s, "calibration") for s in cfg.run.calibration_seeds]
         seeds += [(s, "evaluation") for s in cfg.run.evaluation_seeds]
         if target.kind == "real":
-            base = max(cfg.run.calibration_seeds + cfg.run.evaluation_seeds, default=0)
-            nxt = base + 1
-            seeds += [(nxt + i, "calibration") for i in range(extra_real_seeds)]
-            nxt += extra_real_seeds
-            seeds += [(nxt + i, "evaluation") for i in range(extra_real_eval_seeds)]
+            # Fixed bases, far from the configured seeds and from each other.
+            # Deriving them from the counts would mean that asking for more
+            # calibration sessions renumbered the evaluation ones, so seeds
+            # already recorded in a run directory would change role and resume
+            # would keep the stale ones.
+            seeds += [(CALIBRATION_SEED_BASE + i, "calibration")
+                      for i in range(extra_real_seeds)]
+            seeds += [(EVALUATION_SEED_BASE + i, "evaluation")
+                      for i in range(extra_real_eval_seeds)]
 
         if cfg.run.shuffle_seed is not None:
             rng = random.Random(f"{cfg.run.shuffle_seed}:{target_name}:{backend}")
