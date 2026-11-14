@@ -23,9 +23,14 @@ from honeytell.runner import plan, run_all
 from honeytell.store import Store
 
 
-def _run_id(cfg_sha: str, override: str | None) -> str:
-    """Default run id follows the config, so rerunning the same config resumes."""
-    return override or f"run-{cfg_sha[:12]}"
+def _run_id(cfg: Config, override: str | None) -> str:
+    """Default run id follows the measurement settings, not the whole config.
+
+    So adding a target or a second model extends a run instead of discarding
+    it, while changing a framing parameter starts a new one, because sessions
+    measured differently are not comparable.
+    """
+    return override or f"run-{cfg.measurement_fingerprint()[:12]}"
 
 
 def cmd_probes(_: argparse.Namespace) -> int:
@@ -284,8 +289,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                 return 1
         print()
 
-    run_id = _run_id(sha, args.run_id)
-    store = Store(cfg.run.out_dir, run_id)
+    run_id = _run_id(cfg, args.run_id)
+    store = Store(cfg.run.out_dir, run_id, config_sha256=sha)
     record = collect(cfg, sha, run_id)
     (store.dir / "provenance.json").write_text(json.dumps(record, indent=2, default=str))
     print(f"run {run_id} -> {store.dir}")

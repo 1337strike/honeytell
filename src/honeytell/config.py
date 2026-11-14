@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import pathlib
 import tomllib
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+from honeytell import __version__
 
 
 class BackendSpec(BaseModel):
@@ -255,6 +258,31 @@ class Config(BaseModel):
                 problems.append(f"duplicate target name {t.name!r}")
             seen.add(t.name)
         return problems
+
+
+    def measurement_fingerprint(self) -> str:
+        """Hash of the settings that decide how a session is measured.
+
+        Not the whole config. Targets and backends decide which cells exist;
+        the probe settings decide whether two cells can be compared. Keying a
+        run on the whole file meant that adding a honeypot, or a second model,
+        threw away every session already recorded, which is both wasteful and
+        a reason to avoid extending a study.
+
+        Anything here changing does invalidate earlier sessions, which is the
+        point: a framing parameter is part of the measurement.
+        """
+        payload = json.dumps(
+            {
+                "probes": self.probes.model_dump(),
+                "shuffle_seed": self.run.shuffle_seed,
+                "calibration_seeds": sorted(self.run.calibration_seeds),
+                "evaluation_seeds": sorted(self.run.evaluation_seeds),
+                "tool": __version__,
+            },
+            sort_keys=True,
+        )
+        return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def load(path: str | pathlib.Path) -> tuple[Config, str]:

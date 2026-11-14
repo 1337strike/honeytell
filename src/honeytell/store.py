@@ -20,8 +20,8 @@ FEATURE_COLUMNS = (
 )
 
 SESSION_COLUMNS = (
-    "run_id", "target", "target_kind", "backend", "seed", "role",
-    "reachable", "probe_errors", "commands", "note",
+    "run_id", "config_sha256", "target", "target_kind", "backend", "seed",
+    "role", "reachable", "probe_errors", "commands", "note",
 )
 
 STEP_COLUMNS = (
@@ -66,10 +66,14 @@ class Store:
     process never loses a finished cell, and a rerun skips what is recorded.
     """
 
-    def __init__(self, out_dir: pathlib.Path, run_id: str) -> None:
+    def __init__(self, out_dir: pathlib.Path, run_id: str,
+                 config_sha256: str = "") -> None:
         self.dir = pathlib.Path(out_dir) / run_id
         self.raw = self.dir / "raw"
         self.run_id = run_id
+        # Recorded per session, so a run extended under a changed config is
+        # auditable rather than silently mixed.
+        self.config_sha256 = config_sha256
         self.raw.mkdir(parents=True, exist_ok=True)
         self._init_csv(self.dir / "features.csv", FEATURE_COLUMNS)
         self._init_csv(self.dir / "steps.csv", STEP_COLUMNS)
@@ -160,7 +164,7 @@ class Store:
 
         with (self.dir / "sessions.csv").open("a", newline="") as fh:
             csv.writer(fh).writerow([
-                self.run_id, result.target, result.target_kind,
+                self.run_id, self.config_sha256, result.target, result.target_kind,
                 result.backend or "", result.seed, result.role,
                 int(result.reachable),
                 len([k for k in result.errors if not k.startswith("__")]),

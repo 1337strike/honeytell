@@ -188,3 +188,59 @@ class TestBackendContext:
         })
         rec = collect(cfg, "a" * 64, "run-1")
         assert rec["backends"][0]["context_length"] == 8192
+
+
+class TestMeasurementFingerprint:
+    """A run is keyed on how sessions are measured, not on the whole config.
+
+    Targets and backends decide which cells exist; the probe settings decide
+    whether two cells can be compared. Keying on the whole file meant adding a
+    honeypot threw away every session already recorded, which made extending a
+    study something to avoid.
+    """
+
+    def _cfg(self, **over):
+        base = {
+            "backends": [{"name": "a", "model": "m"}],
+            "targets": [{"name": "real", "kind": "real"}],
+            "probes": {"idle_ms": 1500, "repeats": 3, "max_seq_lines": 120},
+        }
+        base.update(over)
+        return Config.model_validate(base)
+
+    def test_adding_a_backend_keeps_the_run(self):
+        one = self._cfg()
+        two = self._cfg(backends=[{"name": "a", "model": "m"},
+                                  {"name": "b", "model": "n"}])
+        assert one.measurement_fingerprint() == two.measurement_fingerprint()
+
+    def test_adding_a_target_keeps_the_run(self):
+        one = self._cfg()
+        two = self._cfg(targets=[{"name": "real", "kind": "real"},
+                                 {"name": "hp", "kind": "classic_honeypot",
+                                  "port": 2201}])
+        assert one.measurement_fingerprint() == two.measurement_fingerprint()
+
+    def test_changing_the_framing_starts_a_new_run(self):
+        """A session read with a different framing window is not comparable
+        with one read before it, so it must not land in the same run."""
+        one = self._cfg()
+        two = self._cfg(probes={"idle_ms": 800, "repeats": 3, "max_seq_lines": 120})
+        assert one.measurement_fingerprint() != two.measurement_fingerprint()
+
+    def test_changing_the_suite_length_starts_a_new_run(self):
+        one = self._cfg()
+        two = self._cfg(probes={"idle_ms": 1500, "repeats": 5, "max_seq_lines": 120})
+        assert one.measurement_fingerprint() != two.measurement_fingerprint()
+
+    def test_changing_the_seed_split_starts_a_new_run(self):
+        one = self._cfg()
+        two = self._cfg(run={"calibration_seeds": [1, 2, 3],
+                             "evaluation_seeds": [4, 5]})
+        assert one.measurement_fingerprint() != two.measurement_fingerprint()
+
+    def test_the_full_config_hash_is_still_recorded(self, tmp_path):
+        """Keyed on less, recorded in full, so a run extended under a changed
+        config is auditable rather than silently mixed."""
+        from honeytell.store import SESSION_COLUMNS
+        assert "config_sha256" in SESSION_COLUMNS
