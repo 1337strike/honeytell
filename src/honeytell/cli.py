@@ -95,17 +95,24 @@ async def _probe_login(cfg: Config, target, backend: str | None) -> tuple[bool, 
     from honeytell.transport.ssh import open_ssh_shell
 
     port = target.port_for(backend)
+    # The run's own timeout, not a shorter one. A honeypot that generates its
+    # banner can take a minute to print a prompt, and giving up early reports
+    # a working target as broken.
+    timeout_s = cfg.probes.timeout_s
     try:
         async with open_ssh_shell(
             target.host, port=port,
             username=target.username, password=target.password,
             client_key=target.client_key,
             idle_ms=target.idle_ms or cfg.probes.idle_ms,
-            timeout_s=15.0, connect_timeout_s=15.0,
+            timeout_s=timeout_s, connect_timeout_s=30.0,
         ) as sh:
-            step = await sh.run("echo honeytell-doctor", timeout_s=30.0)
+            step = await sh.run("echo honeytell-doctor", timeout_s=timeout_s)
             if step.timed_out:
-                return False, "connected and logged in, but no reply to a command"
+                return False, (
+                    f"logged in, but no reply to a command within {timeout_s:.0f}s"
+                    + (" and no prompt was learned" if not sh.prompt else "")
+                )
             if "honeytell-doctor" not in step.text:
                 return True, f"logged in; echo returned {step.text.strip()[:40]!r}"
             return True, "logged in, shell answers"
@@ -181,7 +188,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                 if args.no_login:
                     print(f"  target {label} at {t.host}:{port}: open")
                     continue
+                print(f"  target {label} at {t.host}:{port}: checking...",
+                      end="\r", flush=True)
                 ok_login, detail = asyncio.run(_probe_login(cfg, t, backend))
+                print(" " * 78, end="\r")
                 mark = "ok" if ok_login else "FAILED"
                 print(f"  target {label} at {t.host}:{port}: {mark} ({detail})")
                 if not ok_login:
