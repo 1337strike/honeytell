@@ -125,8 +125,16 @@ class SSHShell:
             text = text[: -len(self.prompt)]
         return bool(text.strip())
 
-    async def _drain(self, idle_ms: int, timeout_s: float) -> bytes:
-        """Read whatever is already waiting, used once at login."""
+    async def _drain(self, idle_ms: int, timeout_s: float,
+                     first_byte_wait_s: float = 60.0) -> bytes:
+        """Read whatever is waiting after login, to learn the prompt.
+
+        The first byte gets a long wait of its own. A real shell prints its
+        banner at once, but a honeypot that generates one has to think first,
+        and giving up early means no prompt is learned. Without a prompt every
+        later command falls back to waiting for silence, which is the framing
+        that cannot tell a finished reply from a slow one.
+        """
         buf = bytearray()
         deadline = time.monotonic() + timeout_s
         got_any = False
@@ -134,7 +142,8 @@ class SSHShell:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            wait = min(idle_ms / 1000.0, remaining) if got_any else min(5.0, remaining)
+            wait = (min(idle_ms / 1000.0, remaining) if got_any
+                    else min(first_byte_wait_s, remaining))
             try:
                 chunk = await asyncio.wait_for(self.process.stdout.read(self.read_chunk),
                                                wait)

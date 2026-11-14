@@ -274,3 +274,20 @@ class TestReplyFraming:
         raw, first, _, timed_out, _ = await sh._read_reply("whoami", 300, 10.0)
         assert not timed_out
         assert b"analyst" in raw
+
+
+class TestPromptLearning:
+    """Without a prompt, every command falls back to framing on silence,
+    which is the thing that cannot tell a finished reply from a slow one. A
+    honeypot that generates its banner needs time to print one."""
+
+    async def test_a_slow_banner_is_still_learned(self):
+        sh = TestReplyFraming()._shell([(12.0, b"Welcome\r\nroot@ubuntu:~$ ")],
+                                       prompt="")
+        raw = await sh._drain(300, 60.0, first_byte_wait_s=30.0)
+        assert b"root@ubuntu" in raw, "gave up before the banner arrived"
+
+    async def test_a_silent_target_does_not_hang_forever(self):
+        sh = TestReplyFraming()._shell([], prompt="")
+        raw = await sh._drain(300, 2.0, first_byte_wait_s=30.0)
+        assert raw == b""
