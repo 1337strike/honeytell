@@ -43,6 +43,11 @@ def plan(
 ) -> list[CellPlan]:
     """Every cell a full run covers, in the order it will be executed.
 
+    Calibration seeds go to the real control alone. It is the only target that
+    shapes the rule, and every table is built from evaluation sessions, so a
+    calibration run against a honeypot would cost its full generation time and
+    then be read by nothing.
+
     Real-system cells are cheap, so the plan can carry extra seeds for them.
     The calibration extras are what make the boundary quantile meaningful; the
     evaluation extras are what make the reported false positive rate meaningful,
@@ -56,7 +61,13 @@ def plan(
     out: list[CellPlan] = []
     for target_name, backend in cfg.cells():
         target = cfg.target(target_name)
-        seeds = [(s, "calibration") for s in cfg.run.calibration_seeds]
+        seeds: list[tuple[int, str]] = []
+        # Only the real system shapes the decision rule, and only evaluation
+        # sessions reach the tables, so a calibration session against a
+        # honeypot is collected and then read by nothing. On a backend that
+        # takes forty minutes a session that is most of an hour each.
+        if target.kind == "real":
+            seeds += [(s, "calibration") for s in cfg.run.calibration_seeds]
         seeds += [(s, "evaluation") for s in cfg.run.evaluation_seeds]
         if target.kind == "real":
             # Fixed bases, far from the configured seeds and from each other.

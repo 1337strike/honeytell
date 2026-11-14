@@ -277,7 +277,9 @@ class TestSessionOrdering:
             "run": {"calibration_seeds": [1], "evaluation_seeds": [2]},
         })
         cells = plan(cfg, extra_real_seeds=20, extra_real_eval_seeds=10)
-        assert sum(1 for c in cells if c.target == "hp") == 2
+        # The honeypot keeps its evaluation seed and loses the calibration one,
+        # which only the control can use.
+        assert sum(1 for c in cells if c.target == "hp") == 1
         assert sum(1 for c in cells if c.target == "real") == 32
 
 
@@ -328,3 +330,43 @@ class TestResumeSkipsOnlyFinishedWork:
                            hallucinating_responder)
         store.write_cell(good, specs)
         assert good.key in store.done_cells()
+
+
+class TestPlanSpendsTimeWhereItCounts:
+    """Generation time is the whole budget of a run, so a session that
+    nothing reads is the most expensive kind of mistake."""
+
+    def _cfg(self):
+        from honeytell.config import Config
+        return Config.model_validate({
+            "backends": [{"name": "small", "model": "m"}],
+            "targets": [
+                {"name": "real", "kind": "real"},
+                {"name": "hp", "kind": "llm_honeypot", "backends": ["small"],
+                 "port": 2210},
+                {"name": "classic", "kind": "classic_honeypot", "port": 2201},
+            ],
+            "run": {"calibration_seeds": [1, 2], "evaluation_seeds": [3, 4, 5, 6, 7]},
+        })
+
+    def test_only_the_control_gets_calibration_sessions(self):
+        from honeytell.runner import plan
+        cells = plan(self._cfg())
+        for c in cells:
+            if c.role == "calibration":
+                assert c.target == "real", (
+                    f"{c.target} is not the control, so its calibration session "
+                    f"would shape nothing and be read by nothing"
+                )
+
+    def test_honeypots_keep_every_evaluation_session(self):
+        from honeytell.runner import plan
+        cells = plan(self._cfg())
+        for name in ("hp", "classic"):
+            assert sum(1 for c in cells if c.target == name) == 5
+
+    def test_the_saving_is_what_it_should_be(self):
+        from honeytell.runner import plan
+        cells = plan(self._cfg())
+        honeypot = [c for c in cells if c.target != "real"]
+        assert len(honeypot) == 10
