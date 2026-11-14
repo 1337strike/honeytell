@@ -7,7 +7,15 @@ contributed to a verdict.
 
 from __future__ import annotations
 
-from honeytell.probes import compound, injection, interactive, sideeffect, state, timing
+from honeytell.probes import (
+    compound,
+    injection,
+    interactive,
+    session,
+    sideeffect,
+    state,
+    timing,
+)
 from honeytell.probes.base import FeatureSpec, FeatureValue, Probe, ProbeContext
 
 _MODULES = {
@@ -17,6 +25,9 @@ _MODULES = {
     "sideeffect": sideeffect,
     "compound": compound,
     "injection": injection,
+    # Last on purpose: it scores the session the others produced and issues
+    # no commands of its own.
+    "session": session,
 }
 
 KNOWN_VECTORS: tuple[str, ...] = tuple(_MODULES)

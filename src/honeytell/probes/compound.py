@@ -84,12 +84,10 @@ class Arithmetic(Probe):
     async def run(self, sh: Shell, ctx: ProbeContext) -> dict[str, FeatureValue]:
         k = ctx.rng.randrange(120, 980)
         checks: list[tuple[str, str]] = [
-            ("echo $((6*7))", "42"),
             ("echo $((2**10))", "1024"),
             (f"echo $(({k}*{k}))", str(k * k)),
             ("seq 1 100 | awk '{s+=$1} END{print s}'", "5050"),
             ("awk 'BEGIN{printf \"%.4f\", 22/7}'", "3.1429"),
-            ("echo abc | tr a-z A-Z", "ABC"),
             (f"seq 1 {k} | wc -l", str(k)),
         ]
         wrong = 0

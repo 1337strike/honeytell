@@ -63,7 +63,7 @@ class LengthSlope(Probe):
     #
     # Note the regression uses the output actually received, not the output
     # requested. A target that truncates is measured on what it really emitted.
-    _fractions = (0.008, 0.04, 0.17, 0.42, 1.0)
+    _fractions = (0.008, 0.06, 0.3, 1.0)
 
     def _counts(self, ceiling: int) -> tuple[int, ...]:
         return tuple(sorted({max(1, round(ceiling * f)) for f in self._fractions}))

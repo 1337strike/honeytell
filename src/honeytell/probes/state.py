@@ -39,7 +39,7 @@ class FileRoundTrip(Probe):
                     "Reading a deleted file did not report it missing"),
     )
 
-    def __init__(self, distance: int = 12) -> None:
+    def __init__(self, distance: int = 5) -> None:
         self.distance = distance
 
     async def run(self, sh: Shell, ctx: ProbeContext) -> dict[str, FeatureValue]:
@@ -85,7 +85,7 @@ class AppendCount(Probe):
 
     async def run(self, sh: Shell, ctx: ProbeContext) -> dict[str, FeatureValue]:
         path = f"/tmp/.{ctx.nonce('a')}"
-        k = ctx.rng.randrange(4, 9)
+        k = ctx.rng.randrange(3, 6)
         last = ""
         await sh.run(f": > {path}")
         for i in range(k):
@@ -94,7 +94,7 @@ class AppendCount(Probe):
             if step.timed_out:
                 return self.check(self.empty())
 
-        for cmd in list(_FILLER)[:6]:
+        for cmd in list(_FILLER)[:3]:
             await sh.run(cmd)
 
         count = await sh.run(f"wc -l < {path}")
@@ -125,7 +125,7 @@ class PermissionRoundTrip(Probe):
         if (await sh.run(f"touch {path}")).timed_out:
             return self.check(self.empty())
         await sh.run(f"chmod {mode} {path}")
-        for cmd in list(_FILLER)[:5]:
+        for cmd in list(_FILLER)[:3]:
             await sh.run(cmd)
         got = await sh.run(f"stat -c %a {path}")
         bad = None if got.timed_out else not re.search(rf"\b{mode}\b", body(got))

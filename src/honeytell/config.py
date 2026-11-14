@@ -127,7 +127,15 @@ class ProbeSpec(BaseModel):
                     "inter-token gap of the slowest backend or replies get truncated.",
     )
     timeout_s: float = 120.0
-    repeats: int = Field(default=5, description="Repetitions inside timing probes")
+    repeats: int = Field(
+        default=3,
+        description="Repetitions inside timing probes. An LLM honeypot resends "
+                    "the whole conversation on every command, so the cost of a "
+                    "command grows with how many came before it and the cost of "
+                    "a session grows with the square of its length. Each "
+                    "repetition is paid for several times over. Three is the "
+                    "fewest that still gives a coefficient of variation.",
+    )
     warmup_commands: int = Field(
         default=5,
         description="Throwaway commands at the start of each session, not "

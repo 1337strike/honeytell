@@ -162,7 +162,8 @@ notes = "Claims timing jitter and a local fast path to resist fingerprinting."
 # ---------------------------------------------------------------------------
 
 [probes]
-vectors = ["timing", "state", "compound"]
+# "session" reads the session the others produced, so it must come last.
+vectors = ["timing", "state", "compound", "session"]
 exclude = []
 
 # Silence that marks the end of a reply. This must be larger than the slowest
@@ -173,9 +174,11 @@ exclude = []
 idle_ms = 1500
 timeout_s = 120.0
 
-# Repetitions inside the timing probes, which need several samples to estimate
-# a coefficient of variation.
-repeats = 5
+# Repetitions inside the timing probes. An LLM honeypot resends the whole
+# conversation on every command, so each command costs more than the one
+# before it and a session costs roughly the square of its length. Every
+# repetition is paid for several times over.
+repeats = 3
 
 # Largest output the timing probes ask for, in lines of seq. This is the single
 # biggest lever on how long a run takes, because a generator pays per token for

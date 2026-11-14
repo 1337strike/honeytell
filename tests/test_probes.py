@@ -152,7 +152,12 @@ class TestSessionBudget:
 
     MAX_SESSION_BYTES = 8_000
     MAX_SINGLE_RESPONSE_BYTES = 800
-    MAX_COMMANDS = 110
+    # An LLM honeypot resends the whole conversation on every command, so the
+    # cost of a command grows with how many came before it and the cost of a
+    # session grows with roughly the square of its length. Ollama's log during
+    # one Beelzebub session went from 892 ms to a full minute across thirty
+    # commands. Length is the most expensive thing in the suite.
+    MAX_COMMANDS = 65
 
     async def _session(self, honest, ctx):
         for probe in (*timing.PROBES, *state.PROBES, *compound.PROBES):
@@ -291,3 +296,60 @@ class TestPromptLearning:
         sh = TestReplyFraming()._shell([], prompt="")
         raw = await sh._drain(300, 2.0, first_byte_wait_s=30.0)
         assert raw == b""
+
+
+class TestLatencyGrowth:
+    """A real shell does not care how long you have been logged in. An LLM
+    honeypot resends the conversation, so answering gets dearer as a session
+    goes on. Measured inside one session it is a slope, so a slower machine
+    moves every point together."""
+
+    def _steps(self, times):
+        from honeytell.transport.shell import StepRecord
+        return [
+            StepRecord(index=i, command=f"c{i}", raw=b"x", t_sent_ns=0,
+                       t_first_byte_ns=1, t_last_byte_ns=int(t * 1e6))
+            for i, t in enumerate(times)
+        ]
+
+    class _Shell:
+        def __init__(self, steps):
+            self.steps = steps
+
+        async def run(self, *a, **k):
+            raise AssertionError("this probe must issue no commands of its own")
+
+    async def test_a_flat_session_scores_near_zero(self, ctx):
+        from honeytell.probes import session
+        sh = self._Shell(self._steps([12.0 + (i % 3) for i in range(40)]))
+        v = await session.LatencyGrowth().run(sh, ctx)
+        assert abs(v["ms_per_command"]) < 0.5
+        assert 0.7 < v["last_over_first"] < 1.4
+
+    async def test_a_growing_session_is_caught(self, ctx):
+        from honeytell.probes import session
+        sh = self._Shell(self._steps([900.0 + 1800.0 * i for i in range(40)]))
+        v = await session.LatencyGrowth().run(sh, ctx)
+        assert v["ms_per_command"] > 1000
+        assert v["last_over_first"] > 8
+
+    async def test_it_issues_no_commands(self, ctx):
+        from honeytell.probes import session
+        sh = self._Shell(self._steps([10.0] * 40))
+        await session.LatencyGrowth().run(sh, ctx)
+
+    async def test_a_short_session_is_undefined_rather_than_guessed(self, ctx):
+        from honeytell.probes import session
+        sh = self._Shell(self._steps([10.0] * 4))
+        v = await session.LatencyGrowth().run(sh, ctx)
+        assert all(x is None for x in v.values())
+
+    def test_the_session_vector_runs_last(self):
+        """It scores what the other probes produced, so anything after it
+        would go unmeasured."""
+        import pathlib
+
+        import honeytell
+        from honeytell.config import load
+        cfg, _ = load(pathlib.Path(honeytell.__file__).with_name("honeytell.example.toml"))
+        assert cfg.probes.vectors[-1] == "session"
