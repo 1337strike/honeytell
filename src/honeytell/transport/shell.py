@@ -10,11 +10,25 @@ from typing import Protocol, runtime_checkable
 # Terminal escape sequences. Honeypots and real shells both emit these; they are
 # stripped before scoring so that a probe never keys on terminal decoration.
 _ANSI = re.compile(rb"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[()][B0]|\x1b[=>]|\r")
+# Some targets print escape sequences as literal text rather than as control
+# bytes, so the usual stripping never sees them and they end up inside the
+# learned prompt and inside every measured reply.
+_ANSI_LITERAL = re.compile(
+    rb"\\(?:x1b|033|e)\\?\[[0-9;?]*[a-zA-Z]|\\\[[0-9;]*m|\\(?:x1b|033|e)"
+)
 
 
 def clean(raw: bytes) -> str:
-    """Strip escape sequences and decode to text, never raising on bad bytes."""
-    return _ANSI.sub(b"", raw).decode("utf-8", errors="replace")
+    """Strip escape sequences and decode to text, never raising on bad bytes.
+
+    Both real control bytes and their literal spellings are removed, because a
+    target that writes the characters backslash-0-3-3 is as much decoration as
+    one that writes the escape byte, and leaving either in makes it part of a
+    measurement.
+    """
+    out = _ANSI.sub(b"", raw)
+    out = _ANSI_LITERAL.sub(b"", out)
+    return out.decode("utf-8", errors="replace")
 
 
 @dataclass(slots=True)

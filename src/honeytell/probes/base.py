@@ -27,6 +27,10 @@ class FeatureSpec:
     kind: Literal["bool", "float"]
     description: str
     higher_means_simulated: bool | None = None
+    """Which direction reads as simulated, for the report. Scoring is two
+    sided: a measured honeypot can be slower than a real shell on one feature
+    and more regular than one on another, so only distance from the real
+    system's range is evidence."""
     decisive: bool = True
     """Whether this feature contributes evidence to the verdict.
 

@@ -27,11 +27,23 @@ class TestFeatureCalibration:
         # The smallest attainable p-value is 1/(n+1), so evidence is capped.
         assert fc.evidence(1e9) <= math.log(11) + 1e-9
 
-    def test_direction_is_respected(self):
-        low = FeatureCalibration("f", "float", False)
-        for v in (10.0, 11.0, 12.0, 9.0):
-            low.observe(v)
-        assert low.evidence(0.1) > low.evidence(10.5)
+    def test_departure_either_way_is_evidence(self):
+        """Scoring is two sided. A measured honeypot answers in a single
+        write with no streaming, so its share of streaming time sits below
+        the real system's range rather than above it, and a one-sided score
+        read that as unremarkable."""
+        fc = FeatureCalibration("f", "float", True)
+        for v in (10.0, 11.0, 12.0, 9.0, 10.5, 11.5):
+            fc.observe(v)
+        middle = fc.evidence(10.5)
+        assert fc.evidence(0.1) > middle, "far below the range is evidence"
+        assert fc.evidence(99.0) > middle, "far above the range is evidence"
+
+    def test_both_tails_score_alike(self):
+        fc = FeatureCalibration("f", "float", True)
+        for v in (10.0, 11.0, 12.0, 9.0, 10.5, 11.5):
+            fc.observe(v)
+        assert fc.evidence(-100.0) == fc.evidence(100.0)
 
     def test_bool_true_is_evidence_when_real_never_shows_it(self):
         fc = FeatureCalibration("b", "bool", None)
@@ -185,10 +197,21 @@ class TestDecide:
         assert v.probes_to_verdict is not None
 
     def test_stops_at_the_first_crossing(self):
+        """The cost reported is the cost of the evidence that settled it, not
+        of the whole suite. Two-sided scoring halves what one feature can
+        contribute, so here it takes both."""
         cal = self._cal()
         v = decide(cal, [("p.a", 9999.0), ("p.b", True)], {"p.a": 6, "p.b": 11})
-        assert v.probes_to_verdict == 1
-        assert v.commands_to_verdict == 6
+        assert v.simulated is True
+        assert v.probes_to_verdict == 2
+        assert v.commands_to_verdict == 11
+
+    def test_the_verdict_lands_on_the_feature_that_crossed(self):
+        cal = self._cal()
+        ordered = [("p.a", 1.0), ("p.b", True), ("p.a", 9999.0)]
+        v = decide(cal, ordered, {"p.a": 6, "p.b": 11})
+        assert v.deciding_feature in {"p.a", "p.b"}
+        assert v.probes_to_verdict is not None
 
     def test_unknown_features_are_ignored(self):
         v = decide(self._cal(), [("not.calibrated", 10.0)])

@@ -33,6 +33,8 @@ class FeatureCalibration:
     name: str
     kind: str
     higher_means_simulated: bool | None
+    """Which direction reads as simulated. Reporting only: scoring is two
+    sided, because a honeypot can depart from a real shell either way."""
     real_values: list[float] = field(default_factory=list)
     real_true: int = 0
     real_n: int = 0
@@ -71,11 +73,15 @@ class FeatureCalibration:
         if not math.isfinite(v):
             return 0.0
         n = len(self.real_values)
-        if self.higher_means_simulated:
-            at_least = sum(1 for r in self.real_values if r >= v)
-        else:
-            at_least = sum(1 for r in self.real_values if r <= v)
-        p = (at_least + 1) / (n + 1)
+        # Two sided. What is known is what a real shell does; a target that
+        # departs from it in either direction is the thing worth noticing.
+        # Measured honeypots sit on both sides: they are slower than a real
+        # shell on content, and far more regular than one on timing, because
+        # they answer in a single write with no streaming at all. A one-sided
+        # score scored the second kind at zero.
+        above = sum(1 for r in self.real_values if r >= v)
+        below = sum(1 for r in self.real_values if r <= v)
+        p = min(1.0, 2.0 * min((above + 1) / (n + 1), (below + 1) / (n + 1)))
         return -math.log(p)
 
 

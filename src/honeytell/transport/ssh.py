@@ -182,9 +182,26 @@ class SSHShell:
         failing to learn it costs every command the full timeout instead.
         """
         raw = await self._drain(self.idle_ms, self.timeout_s)
-        tail = clean(raw).rstrip("\n").split("\n")[-1] if raw else ""
-        self.prompt = tail.strip() if 0 < len(tail.strip()) <= 120 else ""
+        self.prompt = self._prompt_from(clean(raw))
         return self.prompt
+
+    @staticmethod
+    def _prompt_from(text: str) -> str:
+        """Take the prompt from a banner, or nothing if it is not one.
+
+        A string that is not prompt shaped never matches later, so framing
+        falls back to waiting for silence without saying so. Returning nothing
+        at least makes the fallback honest.
+        """
+        for line in reversed(text.rstrip("\n").split("\n")):
+            candidate = line.strip()
+            if not 0 < len(candidate) <= 120:
+                continue
+            if any(candidate.endswith(c) for c in ("$", "#", ">", "%")):
+                return candidate
+            if "@" in candidate and ":" in candidate:
+                return candidate
+        return ""
 
     async def send_raw(self, data: bytes, *, idle_ms: int | None = None,
                        timeout_s: float | None = None) -> StepRecord:

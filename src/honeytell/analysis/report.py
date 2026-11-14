@@ -322,6 +322,12 @@ def write_report(
     add("The rule is calibrated on the real system alone. No honeypot session "
         "influences it, so adding a target never changes how the others are judged.")
     add("")
+    add("Float features are scored two sided: evidence is distance from the "
+        "range the real system produces, in either direction. A honeypot can "
+        "be slower than a real shell on content and more regular than one on "
+        "timing, since it answers in a single write with no streaming, and a "
+        "one-sided score would read the second as unremarkable.")
+    add("")
     add("The threshold is a split-conformal quantile of the accumulated evidence "
         "over real sessions, which bounds the chance that a fresh real session "
         "crosses it. The bound is finite sample and assumes nothing about how the "
