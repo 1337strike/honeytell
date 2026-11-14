@@ -27,6 +27,18 @@ services:
       - "./qwen7b:/configurations:ro"
     restart: unless-stopped
 
+  beelzebub-llama3b:
+    build:
+      context: ../beelzebub/src
+    image: honeytell/beelzebub:pinned
+    container_name: honeytell-beelzebub-llama3b
+    networks: [honeytell-lab]
+    ports:
+      - "127.0.0.1:2212:2222"
+    volumes:
+      - "./llama3b:/configurations:ro"
+    restart: unless-stopped
+
 networks:
   honeytell-lab:
     external: true

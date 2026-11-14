@@ -99,15 +99,19 @@ keeps `etc/userdb.txt` and correct the volume.
 | real | none | 2200 |
 | cowrie | none | 2201 |
 | beelzebub | qwen3b | 2210 |
-| beelzebub | qwen7b | 2211 |
+| beelzebub | llama3b | 2212 |
 | deceive | qwen3b | 2220 |
-| deceive | qwen7b | 2221 |
+| deceive | llama3b | 2222 |
 | shellm | qwen3b / qwen7b | 2230 / 2231 |
 | honeygpt | qwen3b / qwen7b | 2240 / 2241 |
 | llmhoneypot | qwen3b / qwen7b | 2250 / 2251 |
 
 Each honeypot and backend pair is its own container, so nothing can carry over
 between two models that are supposed to be compared.
+
+Ports 2211 and 2221 are left free for a qwen2.5 7B arm. Adding one does not
+disturb a recorded run: the run id follows the measurement settings, not the
+list of backends, so only its own cells are run.
 
 ## Stopping
 

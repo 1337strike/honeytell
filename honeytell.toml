@@ -30,18 +30,37 @@ quantisation = "q4_K_M"
 context_length = 8192
 
 [[backends]]
-name = "qwen7b"
-model = "qwen2.5:7b-instruct-q4_K_M"
+name = "llama3b"
+model = "llama3.2:latest"
 base_url = "http://127.0.0.1:11434/v1"
-# Where the honeypots reach it, from inside the lab network. A container's
-# loopback is the container, so this has to be the lab gateway. honeytell
-# doctor checks this path from a container, because the host being able to
-# reach the backend says nothing about whether the honeypots can.
 lab_url = "http://10.88.0.1:11434"
-family = "qwen2.5"
-params_b = 7.0
+family = "llama3.2"
+params_b = 3.0
 quantisation = "q4_K_M"
 context_length = 8192
+# This tag is mutable upstream. What actually pins the weights is the digest
+# the backend reports, which provenance.json records for every run.
+
+# A size contrast costs about seven hours more than a family one on a CPU
+# backend, because a 7B model is roughly two and a half times slower and the
+# cost of a session grows with the square of its length. Uncomment to add it
+# as a third arm: the run id follows the measurement settings, not the list
+# of backends, so this only runs the new cells and keeps everything already
+# recorded. Port 2211 and 2221 are reserved for it.
+# [[backends]]
+# name = "qwen7b"
+# model = "qwen2.5:7b-instruct-q4_K_M"
+# base_url = "http://127.0.0.1:11434/v1"
+# # Where the honeypots reach it, from inside the lab network. A container's
+# # loopback is the container, so this has to be the lab gateway. honeytell
+# # doctor checks this path from a container, because the host being able to
+# # reach the backend says nothing about whether the honeypots can.
+# lab_url = "http://10.88.0.1:11434"
+# family = "qwen2.5"
+# params_b = 7.0
+# quantisation = "q4_K_M"
+# context_length = 8192
+
 
 # Optional third arm for a family contrast at a similar size.
 # [[backends]]
@@ -95,12 +114,12 @@ kind = "llm_honeypot"
 host = "127.0.0.1"
 port = 2210
 # One container per backend, so each pair has its own port.
-backend_ports = { qwen3b = 2210, qwen7b = 2211 }
+backend_ports = { qwen3b = 2210, llama3b = 2212 }
 username = "root"
 password = "root"
 repo = "https://github.com/mariocandela/beelzebub"
 commit = "df6de36a087c867f7cce90a0d125351bd47b3343"
-backends = ["qwen3b", "qwen7b"]
+backends = ["qwen3b", "llama3b"]
 
 [[targets]]
 name = "deceive"
@@ -108,12 +127,12 @@ kind = "llm_honeypot"
 host = "127.0.0.1"
 port = 2220
 # One container per backend, so each pair has its own port.
-backend_ports = { qwen3b = 2220, qwen7b = 2221 }
+backend_ports = { qwen3b = 2220, llama3b = 2222 }
 username = "root"
 password = "root"
 repo = "https://github.com/splunk/DECEIVE"
 commit = "cce98f3dcd9de74f32f683998e95aa19b795724e"
-backends = ["qwen3b", "qwen7b"]
+backends = ["qwen3b", "llama3b"]
 
 [[targets]]
 name = "shellm"
@@ -121,12 +140,12 @@ kind = "llm_honeypot"
 host = "127.0.0.1"
 port = 2230
 # One container per backend, so each pair has its own port.
-backend_ports = { qwen3b = 2230, qwen7b = 2231 }
+backend_ports = { qwen3b = 2230, llama3b = 2232 }
 username = "root"
 password = "root"
 repo = "https://github.com/stratosphereips/shelLM"
 commit = "a480a5c6e623390786e662c34b6d1ecd8bb98af4"
-backends = ["qwen3b", "qwen7b"]
+backends = ["qwen3b", "llama3b"]
 notes = "Representative of the Stratosphere lineage, which also includes VelLMes and AdvancedShelLM."
 
 [[targets]]
@@ -135,12 +154,12 @@ kind = "llm_honeypot"
 host = "127.0.0.1"
 port = 2240
 # One container per backend, so each pair has its own port.
-backend_ports = { qwen3b = 2240, qwen7b = 2241 }
+backend_ports = { qwen3b = 2240, llama3b = 2242 }
 username = "root"
 password = "root"
 repo = "https://github.com/zyw-286/HoneyGPT"
 commit = "55b3e7396382f8d191d447db9b1b59b02c735d8f"
-backends = ["qwen3b", "qwen7b"]
+backends = ["qwen3b", "llama3b"]
 notes = "Hybrid: a static fast path in front of the model."
 
 [[targets]]
@@ -149,12 +168,12 @@ kind = "llm_honeypot"
 host = "127.0.0.1"
 port = 2250
 # One container per backend, so each pair has its own port.
-backend_ports = { qwen3b = 2250, qwen7b = 2251 }
+backend_ports = { qwen3b = 2250, llama3b = 2252 }
 username = "root"
 password = "root"
 repo = "https://github.com/allsmog/llm-honeypot"
 commit = "be2ab62fa6a9489469b0ac248cb9b5c74734961d"
-backends = ["qwen3b", "qwen7b"]
+backends = ["qwen3b", "llama3b"]
 notes = "Claims timing jitter and a local fast path to resist fingerprinting."
 
 # ---------------------------------------------------------------------------
