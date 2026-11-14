@@ -41,51 +41,113 @@ class SSHShell:
     def steps(self) -> list[StepRecord]:
         return self._steps
 
-    async def _read_until_idle(
-        self, idle_ms: int, timeout_s: float, t_sent_ns: int
+    async def _read_reply(
+        self, command: str, idle_ms: int, timeout_s: float
     ) -> tuple[bytes, int | None, int | None, bool, float | None]:
-        """Read until no byte arrives for ``idle_ms``, or ``timeout_s`` elapses.
+        """Read one reply, telling a finished answer from a slow one.
 
-        Also returns the largest gap between chunks. If that approaches
-        ``idle_ms`` the reply was nearly cut short, which is the one way a
-        per-target idle setting can corrupt a measurement.
+        A pseudo-terminal echoes the command the moment it is sent, and a
+        generator then takes seconds to answer. Waiting for silence cannot
+        separate those: the gap while the target is thinking looks exactly
+        like the end of a reply, so a reader framed on silence captures the
+        echo, calls the command done, and leaves the real answer to arrive
+        during the next one. Everything after that is off by one.
+
+        So the wait is split. Until the first byte of the reply arrives we
+        wait the whole timeout, because the target is entitled to think.
+        After it starts we stop at a gap of ``idle_ms``, or sooner if the
+        shell prints its prompt again, which is a shell saying it is ready.
         """
         buf = bytearray()
         first: int | None = None
+        reply_first: int | None = None
         last: int | None = None
         max_gap: float | None = None
-        deadline = time.monotonic() + timeout_s
+        echo_done = not command
         timed_out = False
+        deadline = time.monotonic() + timeout_s
 
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 timed_out = True
                 break
-            # Before the first byte we are willing to wait the whole timeout.
-            # After it, a gap of idle_ms means the reply is finished.
-            wait = remaining if first is None else min(idle_ms / 1000.0, remaining)
+            # Patient until the reply starts, strict once it is flowing.
+            wait = remaining if reply_first is None else min(idle_ms / 1000.0, remaining)
             try:
-                chunk = await asyncio.wait_for(self.process.stdout.read(self.read_chunk), wait)
+                chunk = await asyncio.wait_for(self.process.stdout.read(self.read_chunk),
+                                               wait)
             except TimeoutError:
-                if first is None:
+                if reply_first is None:
                     timed_out = True
                 break
             except (asyncssh.Error, ConnectionResetError, EOFError):
                 break
             if not chunk:
                 break
+
             now = time.monotonic_ns()
             if first is None:
                 first = now
             else:
                 gap = (now - last) / 1e6
                 max_gap = gap if max_gap is None else max(max_gap, gap)
+            if echo_done and reply_first is None:
+                reply_first = now
             last = now
-            buf.extend(chunk if isinstance(chunk, bytes) else chunk.encode("utf-8", "replace"))
+            buf.extend(chunk if isinstance(chunk, bytes) else
+                       chunk.encode("utf-8", "replace"))
 
-        _ = t_sent_ns
-        return bytes(buf), first, last, timed_out, max_gap
+            text = clean(bytes(buf))
+            if not echo_done and command and command in text:
+                echo_done = True
+            if self.prompt and echo_done and text.rstrip().endswith(self.prompt):
+                break
+
+        # The echo is our own command returning, not the target answering. If
+        # nothing came back beyond it, there is no time to first byte to
+        # report: falling back to the echo would record a reply that never
+        # arrived as the fastest one in the run.
+        if reply_first is None and self._has_body(bytes(buf), command):
+            reply_first = first
+
+        return bytes(buf), reply_first, last, timed_out, max_gap
+
+    def _has_body(self, raw: bytes, command: str) -> bool:
+        """Whether anything came back beyond the echo and the prompt."""
+        text = clean(raw)
+        if command:
+            stripped = text.lstrip("\r\n")
+            if stripped.startswith(command):
+                text = stripped[len(command):]
+        text = text.strip()
+        if self.prompt and text.endswith(self.prompt):
+            text = text[: -len(self.prompt)]
+        return bool(text.strip())
+
+    async def _drain(self, idle_ms: int, timeout_s: float) -> bytes:
+        """Read whatever is already waiting, used once at login."""
+        buf = bytearray()
+        deadline = time.monotonic() + timeout_s
+        got_any = False
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            wait = min(idle_ms / 1000.0, remaining) if got_any else min(5.0, remaining)
+            try:
+                chunk = await asyncio.wait_for(self.process.stdout.read(self.read_chunk),
+                                               wait)
+            except TimeoutError:
+                break
+            except (asyncssh.Error, ConnectionResetError, EOFError):
+                break
+            if not chunk:
+                break
+            got_any = True
+            buf.extend(chunk if isinstance(chunk, bytes) else
+                       chunk.encode("utf-8", "replace"))
+        return bytes(buf)
 
     def _strip(self, raw: bytes, command: str) -> bytes:
         """Remove the PTY echo of the command and the trailing prompt.
@@ -105,9 +167,12 @@ class SSHShell:
         return text.rstrip("\n").encode("utf-8", "replace")
 
     async def learn_prompt(self) -> str:
-        """Drain the login banner and remember the prompt string."""
-        raw, *_ = await self._read_until_idle(self.idle_ms, self.timeout_s,
-                                              time.monotonic_ns())
+        """Drain the login banner and remember the prompt string.
+
+        The prompt is what later tells a finished reply from a slow one, so
+        failing to learn it costs every command the full timeout instead.
+        """
+        raw = await self._drain(self.idle_ms, self.timeout_s)
         tail = clean(raw).rstrip("\n").split("\n")[-1] if raw else ""
         self.prompt = tail.strip() if 0 < len(tail.strip()) <= 120 else ""
         return self.prompt
@@ -116,8 +181,8 @@ class SSHShell:
                        timeout_s: float | None = None) -> StepRecord:
         self.process.stdin.write(data.decode("utf-8", "replace"))
         t_sent = time.monotonic_ns()
-        raw, first, last, to, gap = await self._read_until_idle(
-            idle_ms or self.idle_ms, timeout_s or self.timeout_s, t_sent
+        raw, first, last, to, gap = await self._read_reply(
+            "", idle_ms or self.idle_ms, timeout_s or self.timeout_s
         )
         rec = StepRecord(
             index=len(self._steps),
@@ -138,8 +203,8 @@ class SSHShell:
                   timeout_s: float | None = None) -> StepRecord:
         self.process.stdin.write(command + "\n")
         t_sent = time.monotonic_ns()
-        raw, first, last, to, gap = await self._read_until_idle(
-            idle_ms or self.idle_ms, timeout_s or self.timeout_s, t_sent
+        raw, first, last, to, gap = await self._read_reply(
+            command, idle_ms or self.idle_ms, timeout_s or self.timeout_s
         )
         rec = StepRecord(
             index=len(self._steps),

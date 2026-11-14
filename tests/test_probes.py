@@ -192,3 +192,85 @@ class TestSessionBudget:
                 await probe.run(sh, ctx)
             totals.append(sum(s.output_bytes for s in sh.steps))
         assert totals[1] > totals[0] * 3
+
+
+class TestReplyFraming:
+    """Framing on silence cannot tell a finished reply from a slow one.
+
+    A pseudo-terminal echoes the command at once; a generator then thinks for
+    seconds. A reader that stops at a gap captures the echo, calls the command
+    done, and leaves the real answer to arrive during the next one. Every
+    measurement after that is off by one, and a honeypot run recorded nothing
+    but its own echoes.
+    """
+
+    class FakeStdout:
+        """Delivers chunks with controllable delays."""
+
+        def __init__(self, chunks):
+            self._chunks = list(chunks)
+
+        async def read(self, _n):
+            import asyncio
+            if not self._chunks:
+                await asyncio.sleep(3600)
+            delay, data = self._chunks.pop(0)
+            await asyncio.sleep(delay)
+            return data
+
+    def _shell(self, chunks, prompt="root@ubuntu:~$"):
+        from honeytell.transport.ssh import SSHShell
+        sh = SSHShell(process=type("P", (), {"stdout": self.FakeStdout(chunks),
+                                             "stdin": None})(),
+                      conn=None, idle_ms=300, timeout_s=10.0)
+        sh.prompt = prompt
+        return sh
+
+    async def test_a_slow_reply_is_waited_for(self):
+        """The echo lands at once, the answer two seconds later. A 300 ms
+        idle window must not end the read in between."""
+        sh = self._shell([
+            (0.0, b"seq 1 5\r\n"),
+            (2.0, b"1\r\n2\r\n3\r\n4\r\n5\r\n"),
+            (0.0, b"root@ubuntu:~$ "),
+        ])
+        raw, first, last, timed_out, _ = await sh._read_reply("seq 1 5", 300, 10.0)
+        assert not timed_out
+        assert b"1" in raw and b"5" in raw, "the answer must be captured"
+
+    async def test_the_prompt_ends_the_read(self):
+        sh = self._shell([
+            (0.0, b"whoami\r\n"),
+            (0.5, b"root\r\n"),
+            (0.0, b"root@ubuntu:~$ "),
+            (5.0, b"this must never be read"),
+        ])
+        raw, *_ = await sh._read_reply("whoami", 300, 10.0)
+        assert b"this must never be read" not in raw
+
+    async def test_time_to_first_byte_skips_the_echo(self):
+        """The echo is our own command coming back, not the target answering,
+        so timing it would measure the terminal."""
+        sh = self._shell([
+            (0.0, b"whoami\r\n"),
+            (1.0, b"root\r\n"),
+            (0.0, b"root@ubuntu:~$ "),
+        ])
+        import time as _t
+        t0 = _t.monotonic_ns()
+        _, first, _, _, _ = await sh._read_reply("whoami", 300, 10.0)
+        assert first is not None
+        assert (first - t0) / 1e9 > 0.5, "first byte should be the reply, not the echo"
+
+    async def test_a_target_that_never_answers_times_out(self):
+        sh = self._shell([(0.0, b"whoami\r\n")])
+        raw, first, last, timed_out, _ = await sh._read_reply("whoami", 300, 1.0)
+        assert timed_out is True
+        assert first is None
+
+    async def test_an_instant_reply_still_works(self):
+        """A real shell sends echo, output and prompt together."""
+        sh = self._shell([(0.0, b"whoami\r\nanalyst\r\nroot@ubuntu:~$ ")])
+        raw, first, _, timed_out, _ = await sh._read_reply("whoami", 300, 10.0)
+        assert not timed_out
+        assert b"analyst" in raw
