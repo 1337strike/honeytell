@@ -109,3 +109,42 @@ class TestPinnedSources:
 
     def test_checkouts_are_not_tracked(self):
         assert "targets/*/src/" in (ROOT / ".gitignore").read_text()
+
+
+class TestBackendIsCheckedWhereItIsUsed:
+    """honeytell reaches the backend over loopback from the host. The
+    honeypots reach it over the lab gateway from inside a container. Those
+    are different paths, and the second is the one that failed: the host
+    firewall dropped container packets to its own address, so every request
+    timed out and the honeypot answered "command not found" for three hours
+    while doctor reported the backend healthy.
+    """
+
+    def test_every_backend_declares_the_lab_address(self, cfg):
+        for b in cfg.backends:
+            assert b.lab_url, (
+                f"backend {b.name} declares no lab_url, so the path the "
+                f"honeypots use would go unchecked"
+            )
+
+    def test_the_two_addresses_are_not_the_same(self, cfg):
+        for b in cfg.backends:
+            assert b.lab_url != b.base_url
+            assert "127.0.0.1" not in b.lab_url, (
+                "loopback inside a container is the container"
+            )
+
+    def test_the_lab_address_is_the_network_gateway(self, cfg):
+        for b in cfg.backends:
+            assert GATEWAY in b.lab_url
+
+    def test_honeypot_configs_use_that_same_address(self, cfg):
+        """A second place the address is written is a second place it can
+        drift from the one that gets checked."""
+        declared = {b.lab_url.rstrip("/").removesuffix("/v1") for b in cfg.backends}
+        assert len(declared) == 1
+        host = declared.pop()
+        for backend in cfg.target("beelzebub").backends:
+            text = (TARGETS / "beelzebub" / backend / "services" / "ssh.yaml").read_text()
+            assert host in text
+        assert host in (TARGETS / "deceive" / "compose.yml").read_text()

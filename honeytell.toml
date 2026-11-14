@@ -16,6 +16,11 @@
 name = "qwen3b"
 model = "qwen2.5:3b-instruct-q4_K_M"
 base_url = "http://127.0.0.1:11434/v1"
+# Where the honeypots reach it, from inside the lab network. A container's
+# loopback is the container, so this has to be the lab gateway. honeytell
+# doctor checks this path from a container, because the host being able to
+# reach the backend says nothing about whether the honeypots can.
+lab_url = "http://10.88.0.1:11434"
 family = "qwen2.5"
 params_b = 3.0
 quantisation = "q4_K_M"
@@ -28,6 +33,11 @@ context_length = 8192
 name = "qwen7b"
 model = "qwen2.5:7b-instruct-q4_K_M"
 base_url = "http://127.0.0.1:11434/v1"
+# Where the honeypots reach it, from inside the lab network. A container's
+# loopback is the container, so this has to be the lab gateway. honeytell
+# doctor checks this path from a container, because the host being able to
+# reach the backend says nothing about whether the honeypots can.
+lab_url = "http://10.88.0.1:11434"
 family = "qwen2.5"
 params_b = 7.0
 quantisation = "q4_K_M"
@@ -38,6 +48,7 @@ context_length = 8192
 # name = "llama8b"
 # model = "llama3.1:8b-instruct-q4_K_M"
 # base_url = "http://127.0.0.1:11434/v1"
+# lab_url = "http://10.88.0.1:11434"
 # family = "llama3.1"
 # params_b = 8.0
 # quantisation = "q4_K_M"

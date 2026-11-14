@@ -15,7 +15,18 @@ class BackendSpec(BaseModel):
 
     name: str
     model: str = Field(description="Ollama model tag, e.g. qwen2.5:7b-instruct-q4_K_M")
-    base_url: str = "http://127.0.0.1:11434/v1"
+    base_url: str = Field(
+        default="http://127.0.0.1:11434/v1",
+        description="Where honeytell itself reaches the backend, from the host.",
+    )
+    lab_url: str | None = Field(
+        default=None,
+        description="Where the honeypots reach the backend, from inside the lab "
+                    "network. It is a different address from base_url, because "
+                    "inside a container loopback is the container. Checking only "
+                    "the host address proves nothing about the path the honeypots "
+                    "actually use, which is the one that breaks.",
+    )
     family: str = "unknown"
     params_b: float | None = Field(default=None, description="Parameter count in billions")
     quantisation: str | None = None

@@ -48,6 +48,32 @@ def cmd_probes(_: argparse.Namespace) -> int:
     return 0
 
 
+def _check_ollama_from_lab(lab_url: str, network: str = "honeytell-lab") -> tuple[bool, str]:
+    """Ask the backend for its version from inside the lab network.
+
+    This is the path the honeypots use, and it is the one that fails: the host
+    can reach a service on loopback while a container's packets to the same
+    machine are dropped by the host firewall. Checking from here and not from
+    the host is the difference between finding that out now and finding it out
+    after hours of recording timeouts.
+    """
+    import subprocess
+
+    probe = lab_url.rstrip("/").removesuffix("/v1") + "/api/version"
+    try:
+        r = subprocess.run(
+            ["docker", "run", "--rm", "--network", network,
+             "curlimages/curl:latest", "-m", "6", "-sS", probe],
+            capture_output=True, text=True, timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"could not run the check ({type(exc).__name__})"
+    if r.returncode == 0 and "version" in r.stdout:
+        return True, r.stdout.strip()[:60]
+    detail = (r.stderr or r.stdout).strip().splitlines()
+    return False, detail[-1][:120] if detail else f"exit {r.returncode}"
+
+
 def _check_ollama(url: str) -> tuple[bool, str]:
     tags = url.rstrip("/").removesuffix("/v1") + "/api/tags"
     try:
@@ -123,10 +149,24 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"  cells:    {len(cfg.cells())}")
         for b in cfg.backends:
             reachable, detail = _check_ollama(b.base_url)
-            print(f"  backend {b.name} at {b.base_url}: "
+            print(f"  backend {b.name} from host at {b.base_url}: "
                   f"{'ok' if reachable else 'FAILED'} ({detail})")
             if not reachable:
                 ok = False
+
+        lab_urls = {b.lab_url for b in cfg.backends if b.lab_url}
+        if not lab_urls:
+            print("  no backend declares lab_url, so the path the honeypots use "
+                  "is unchecked")
+        elif args.no_lab_check:
+            print("  lab-side backend check skipped")
+        else:
+            for url in sorted(lab_urls):
+                reachable, detail = _check_ollama_from_lab(url)
+                print(f"  backend from the lab network at {url}: "
+                      f"{'ok' if reachable else 'FAILED'} ({detail})")
+                if not reachable:
+                    ok = False
         for t in cfg.targets:
             for backend in (t.backends or [None]):
                 port = t.port_for(backend)
@@ -293,6 +333,8 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--config", default="honeytell.toml")
     d.add_argument("--no-login", action="store_true",
                    help="only check that the port is open, without logging in")
+    d.add_argument("--no-lab-check", action="store_true",
+                   help="skip reaching the backend from inside the lab network")
     d.set_defaults(func=cmd_doctor)
 
     v = sub.add_parser("validate", help="check the config without running anything")
